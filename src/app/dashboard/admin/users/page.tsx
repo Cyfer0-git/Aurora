@@ -17,6 +17,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose
+} from '@/components/ui/dialog';
 import { users } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
@@ -53,6 +63,7 @@ const newUserSchema = z.object({
 export default function ManageUsersPage() {
   const [userList, setUserList] = useState<User[]>(users);
   const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),
@@ -83,6 +94,7 @@ export default function ManageUsersPage() {
       description: `${newUser.name} has been added to the team.`,
     });
     form.reset();
+    setIsDialogOpen(false);
   }
 
   const getInitials = (name: string) => {
@@ -98,18 +110,23 @@ export default function ManageUsersPage() {
       <PageHeader
         title="Manage Users"
         subtitle={`There are ${userList.length} users in your team.`}
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <Card>
+      >
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <PlusCircle className="mr-2 h-4 w-4" /> Add User
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <PlusCircle /> Add New User
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle>Add New User</DialogTitle>
+                  <DialogDescription>
+                    Create a new team member and assign them a role.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
                   <FormField
                     control={form.control}
                     name="name"
@@ -130,10 +147,7 @@ export default function ManageUsersPage() {
                       <FormItem>
                         <FormLabel>Email</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder="user@example.com"
-                            {...field}
-                          />
+                          <Input placeholder="user@example.com" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -163,60 +177,61 @@ export default function ManageUsersPage() {
                       </FormItem>
                     )}
                   />
-                </CardContent>
-                <CardFooter>
-                  <Button type="submit" className="w-full">
-                    Create User
-                  </Button>
-                </CardFooter>
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="secondary">
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit">Create User</Button>
+                </DialogFooter>
               </form>
             </Form>
-          </Card>
-        </div>
-        <div className="lg:col-span-2">
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {userList.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar>
-                            <AvatarImage src={user.avatarUrl} alt={user.name} />
-                            <AvatarFallback>
-                              {getInitials(user.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium">{user.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            user.role === 'admin' ? 'default' : 'secondary'
-                          }
-                          className={cn(user.role === 'admin' && 'bg-primary')}
-                        >
-                          {user.role}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+          </DialogContent>
+        </Dialog>
+      </PageHeader>
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {userList.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar>
+                        <AvatarImage src={user.avatarUrl} alt={user.name} />
+                        <AvatarFallback>
+                          {getInitials(user.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{user.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        user.role === 'admin' ? 'default' : 'secondary'
+                      }
+                      className={cn(user.role === 'admin' && 'bg-primary')}
+                    >
+                      {user.role}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

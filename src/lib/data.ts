@@ -22,6 +22,13 @@ export const users: User[] = [
     avatarUrl: 'https://picsum.photos/seed/user3/40/40',
     role: 'member',
   },
+  {
+    id: '4',
+    name: 'Avay Gupta',
+    email: 'avay.gupta@auroramy.com',
+    avatarUrl: 'https://picsum.photos/seed/user4/40/40',
+    role: 'admin',
+  },
 ];
 
 export const tasks: Task[] = [

@@ -79,11 +79,15 @@ export default function ReportsPage() {
     if (!user) return;
     const q = query(
       collection(db, 'reports'), 
-      where('userId', '==', user.id), 
-      orderBy('submittedAt', 'desc')
+      where('userId', '==', user.id)
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
+      reportsData.sort((a, b) => {
+        const dateA = a.submittedAt?.seconds ? a.submittedAt.seconds : 0;
+        const dateB = b.submittedAt?.seconds ? b.submittedAt.seconds : 0;
+        return dateB - dateA;
+      });
       setUserReports(reportsData);
       setIsLoading(false);
     });

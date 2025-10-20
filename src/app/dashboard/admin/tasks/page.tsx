@@ -30,6 +30,17 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Calendar } from '@/components/ui/calendar';
 import type { Task, User } from '@/lib/definitions';
 import { useAuth } from '@/hooks/use-auth';
@@ -38,7 +49,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useState, useEffect, useRef } from 'react';
-import { CalendarIcon, PlusCircle } from 'lucide-react';
+import { CalendarIcon, PlusCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
@@ -52,7 +63,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, serverTimestamp, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 
 
 const taskSchema = z.object({
@@ -80,7 +91,7 @@ export default function ManageTasksPage() {
       const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
       setAllTasks(tasksData);
       tasksLoaded.current = true;
-      if (usersLoaded.current) {
+      if (usersLoaded.current || snapshot.empty) {
         setIsLoading(false);
       }
     });
@@ -90,7 +101,7 @@ export default function ManageTasksPage() {
       const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       setUsers(usersData);
       usersLoaded.current = true;
-      if (tasksLoaded.current) {
+      if (tasksLoaded.current || usersData.length > 0) {
         setIsLoading(false);
       }
     });
@@ -132,6 +143,23 @@ export default function ManageTasksPage() {
       console.error(error);
     }
   }
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteDoc(doc(db, "tasks", taskId));
+      toast({
+        title: "Task Deleted",
+        description: "The task has been removed.",
+      });
+    } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Error Deleting Task",
+        description: "Could not remove the task.",
+      });
+      console.error("Error deleting task: ", error);
+    }
+  };
 
   const getInitials = (name: string) => {
     if(!name) return '';
@@ -278,10 +306,11 @@ export default function ManageTasksPage() {
                     <TableHead>Assigned To</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isLoading ? <TableRow><TableCell colSpan={4} className='text-center py-4'>Loading tasks...</TableCell></TableRow> : allTasks.map((task) => {
+                  {isLoading ? <TableRow><TableCell colSpan={5} className='text-center py-4'>Loading tasks...</TableCell></TableRow> : allTasks.map((task) => {
                     const assignedUser = getUserById(task.assignedTo);
                     const dueDate = task.dueDate?.seconds ? new Date(task.dueDate.seconds * 1000) : new Date(task.dueDate);
                     return (
@@ -301,6 +330,27 @@ export default function ManageTasksPage() {
                             <TableCell>{format(dueDate, 'MMM d, yyyy')}</TableCell>
                             <TableCell>
                                 <Badge variant={task.status === 'Done' ? 'default' : task.status === 'In Progress' ? 'secondary' : 'outline'} className={cn(task.status === 'Done' && 'bg-green-600')}>{task.status}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                     <Button variant="ghost" size="icon">
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will permanently delete the task <span className='font-bold'>"{task.title}"</span>. This action cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => handleDeleteTask(task.id)}>Delete</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
                             </TableCell>
                         </TableRow>
                     )

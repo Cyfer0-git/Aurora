@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/dashboard');
   };
 
-  if (loading && typeof window !== 'undefined') {
+  if (loading) {
     return (
        <div className="flex items-center justify-center h-screen">
           <div className="flex flex-col items-center gap-4">

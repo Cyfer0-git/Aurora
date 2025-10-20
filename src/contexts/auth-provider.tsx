@@ -87,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const { user: firebaseUser } = userCredential;
 
-      // Assign 'admin' role if email matches, otherwise 'member'
-      const role = email.toLowerCase() === 'avay.gupta@auroramy.com' ? 'admin' : 'member';
+      // Assign 'admin' role if email matches, otherwise 'Support'
+      const role = email.toLowerCase() === 'avay.gupta@auroramy.com' ? 'admin' : 'Support';
 
       const newUser: Omit<User, 'id'> = {
         name,

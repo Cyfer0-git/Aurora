@@ -60,7 +60,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/lib/definitions';
 import { useState, useEffect } from 'react';
 import { PlusCircle, Trash2 } from 'lucide-react';
-import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -68,7 +68,7 @@ import { useAuth } from '@/hooks/use-auth';
 const newUserSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
   email: z.string().email({ message: 'Invalid email address.' }),
-  role: z.enum(['admin', 'member'], { required_error: 'Role is required.' }),
+  role: z.enum(['admin', 'Support', 'VIP', 'CS'], { required_error: 'Role is required.' }),
   // Password is handled by a separate function, not in this form.
 });
 
@@ -94,8 +94,35 @@ export default function ManageUsersPage() {
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),
-    defaultValues: { name: '', email: '', role: 'member' },
+    defaultValues: { name: '', email: '', role: 'Support' },
   });
+  
+  const handleRoleChange = async (userId: string, newRole: User['role']) => {
+    if (currentUser?.id === userId && newRole !== 'admin') {
+      toast({
+        variant: "destructive",
+        title: "Action Forbidden",
+        description: "Admins cannot demote their own role.",
+      });
+      return;
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      await updateDoc(userDocRef, { role: newRole });
+      toast({
+        title: 'Role Updated',
+        description: 'User role has been successfully changed.',
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Could not update user role.',
+      });
+      console.error('Error updating role: ', error);
+    }
+  };
 
   async function onSubmit(values: z.infer<typeof newUserSchema>) {
     const userExists = userList.some(user => user.email === values.email);
@@ -231,8 +258,10 @@ export default function ManageUsersPage() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="member">Member</SelectItem>
                             <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="Support">Support</SelectItem>
+                            <SelectItem value="VIP">VIP</SelectItem>
+                            <SelectItem value="CS">CS</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -284,14 +313,20 @@ export default function ManageUsersPage() {
                   </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={
-                        user.role === 'admin' ? 'default' : 'secondary'
-                      }
-                      className={cn(user.role === 'admin' && 'bg-primary')}
+                    <Select
+                      value={user.role}
+                      onValueChange={(newRole: User['role']) => handleRoleChange(user.id, newRole)}
                     >
-                      {user.role}
-                    </Badge>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="Support">Support</SelectItem>
+                        <SelectItem value="VIP">VIP</SelectItem>
+                        <SelectItem value="CS">CS</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableCell>
                   <TableCell className="text-right">
                     <AlertDialog>

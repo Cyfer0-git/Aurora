@@ -5,7 +5,7 @@ export type User = {
   name: string;
   email: string;
   avatarUrl: string;
-  role: 'admin' | 'member';
+  role: 'admin' | 'Support' | 'VIP' | 'CS';
 };
 
 export type Task = {

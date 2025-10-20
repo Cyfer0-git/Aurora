@@ -15,6 +15,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -48,9 +59,11 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/lib/definitions';
 import { useState, useEffect } from 'react';
-import { PlusCircle } from 'lucide-react';
-import { collection, onSnapshot, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
+import { PlusCircle, Trash2 } from 'lucide-react';
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/hooks/use-auth';
+
 
 const newUserSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
@@ -60,6 +73,7 @@ const newUserSchema = z.object({
 });
 
 export default function ManageUsersPage() {
+  const { user: currentUser } = useAuth();
   const [userList, setUserList] = useState<User[]>([]);
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -83,11 +97,7 @@ export default function ManageUsersPage() {
     defaultValues: { name: '', email: '', role: 'member' },
   });
 
-  // Note: This form adds a user to the Firestore 'users' collection, but it does not
-  // create an authentication entry in Firebase Auth. The user will need to be invited
-  // or a separate admin function to create auth users needs to be implemented.
   async function onSubmit(values: z.infer<typeof newUserSchema>) {
-    // Check if user already exists
     const userExists = userList.some(user => user.email === values.email);
     if(userExists){
       toast({
@@ -121,6 +131,32 @@ export default function ManageUsersPage() {
       console.error("Error adding document: ", error);
     }
   }
+
+  const handleDeleteUser = async (userId: string) => {
+    if (currentUser?.id === userId) {
+      toast({
+        variant: "destructive",
+        title: "Cannot delete yourself",
+        description: "Admins cannot delete their own accounts.",
+      });
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, "users", userId));
+      toast({
+        title: "User Deleted",
+        description: "The user has been removed from the team.",
+      });
+    } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Error Deleting User",
+        description: "Could not remove the user.",
+      });
+      console.error("Error deleting user: ", error);
+    }
+  };
 
   const getInitials = (name: string) => {
     if(!name) return '';
@@ -225,12 +261,13 @@ export default function ManageUsersPage() {
                 <TableHead>User</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-10">Loading users...</TableCell>
+                  <TableCell colSpan={4} className="text-center py-10">Loading users...</TableCell>
                 </TableRow>
               ) : userList.map((user) => (
                 <TableRow key={user.id}>
@@ -255,6 +292,27 @@ export default function ManageUsersPage() {
                     >
                       {user.role}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                         <Button variant="ghost" size="icon" disabled={currentUser?.id === user.id}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete the user <span className='font-bold'>{user.name}</span>. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDeleteUser(user.id)}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}

@@ -73,14 +73,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const newUser: User = {
-      id: String(users.length + 1),
+      id: `user-${Date.now()}`,
       name,
       email,
       avatarUrl: `https://picsum.photos/seed/user${users.length + 1}/40/40`,
       role: 'member',
     };
-    // In a real app, you would add this user to your database.
-    // For this mock, we'll just log them in directly.
+    // Add the new user to our mock database
+    users.push(newUser);
+    
+    // Log the user in directly after signup
     setUser(newUser);
     sessionStorage.setItem('aurora-user', JSON.stringify(newUser));
     toast({

@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, doc, updateDoc, query, where } from 'firebase/firestore';
 
@@ -109,21 +109,33 @@ export default function TasksPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const tasksLoaded = useRef(false);
+  const usersLoaded = useRef(false);
+
   useEffect(() => {
-    if(!user) return;
+    if (!user) {
+      setIsLoading(false);
+      return;
+    };
 
     const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
       const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
       setUserTasks(tasksData);
-      if(users.length > 0) setIsLoading(false);
+      tasksLoaded.current = true;
+      if (usersLoaded.current) {
+        setIsLoading(false);
+      }
     });
 
     const usersQuery = collection(db, 'users');
     const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
       const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       setUsers(usersData);
-      if(userTasks.length > 0 || snapshot.empty) setIsLoading(false);
+      usersLoaded.current = true;
+      if (tasksLoaded.current) {
+        setIsLoading(false);
+      }
     });
 
     return () => {

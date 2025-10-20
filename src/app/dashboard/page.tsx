@@ -1,0 +1,194 @@
+'use client';
+import { useState, useEffect, useRef } from 'react';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/page-header';
+import { useAuth } from '@/hooks/use-auth';
+import {
+  ClipboardList,
+  Megaphone,
+  Coffee,
+  Play,
+  Square,
+  Timer,
+} from 'lucide-react';
+import { tasks, announcements } from '@/lib/data';
+import { format, formatDistanceToNow } from 'date-fns';
+import Link from 'next/link';
+
+function BreakTimer() {
+  const [isOnBreak, setIsOnBreak] = useState(false);
+  const [breakStartTime, setBreakStartTime] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isOnBreak && breakStartTime) {
+      timerRef.current = setInterval(() => {
+        setElapsedTime(Date.now() - breakStartTime);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isOnBreak, breakStartTime]);
+
+  const handleToggleBreak = () => {
+    if (isOnBreak) {
+      setIsOnBreak(false);
+      setBreakStartTime(null);
+      setElapsedTime(0);
+    } else {
+      setIsOnBreak(true);
+      setBreakStartTime(Date.now());
+    }
+  };
+
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(
+      2,
+      '0'
+    )}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Coffee className="h-6 w-6" />
+          Break Tracker
+        </CardTitle>
+        <CardDescription>Take a well-deserved break.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col items-center justify-center gap-4">
+        <div className="text-4xl font-bold font-mono text-primary flex items-center gap-2">
+          <Timer className="h-8 w-8" />
+          <span>{formatTime(elapsedTime)}</span>
+        </div>
+        <Button
+          onClick={handleToggleBreak}
+          variant={isOnBreak ? 'destructive' : 'default'}
+          className="w-full"
+        >
+          {isOnBreak ? (
+            <>
+              <Square className="mr-2 h-4 w-4" /> Stop Break
+            </>
+          ) : (
+            <>
+              <Play className="mr-2 h-4 w-4" /> Start Break
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const userTasks = tasks.filter(
+    (task) => task.assignedTo === user?.id && task.status !== 'Done'
+  );
+  const recentAnnouncements = announcements.slice(0, 2);
+
+  return (
+    <div>
+      <PageHeader
+        title={`Welcome back, ${user?.name.split(' ')[0]}!`}
+        subtitle="Here's a summary of your workspace."
+      />
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-6 w-6" />
+              Active Tasks
+            </CardTitle>
+            <CardDescription>
+              You have {userTasks.length} active task
+              {userTasks.length !== 1 && 's'}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {userTasks.length > 0 ? (
+              <ul className="space-y-4">
+                {userTasks.slice(0, 3).map((task) => (
+                  <li
+                    key={task.id}
+                    className="flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="font-semibold">{task.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Due: {format(new Date(task.dueDate), 'PPP')}
+                      </p>
+                    </div>
+                    <Link href="/dashboard/tasks">
+                      <Button variant="outline" size="sm">
+                        View
+                      </Button>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No active tasks. Great job!</p>
+            )}
+            {userTasks.length > 3 && (
+                 <Link href="/dashboard/tasks">
+                    <Button variant="link" className="p-0 h-auto mt-4">View all tasks</Button>
+                 </Link>
+            )}
+          </CardContent>
+        </Card>
+
+        <BreakTimer />
+
+        <Card className="md:col-span-3">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Megaphone className="h-6 w-6" />
+              Company Announcements
+            </CardTitle>
+            <CardDescription>
+              Stay up to date with the latest news.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-6">
+              {recentAnnouncements.map((ann) => (
+                <li key={ann.id}>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDistanceToNow(new Date(ann.createdAt), { addSuffix: true })} by {ann.author}
+                  </p>
+                  <h3 className="font-semibold text-lg mt-1">{ann.title}</h3>
+                  <p className="text-muted-foreground mt-1">{ann.content}</p>
+                </li>
+              ))}
+            </ul>
+             <Link href="/dashboard/announcements" className='mt-4 inline-block'>
+                <Button variant="secondary">View All Announcements</Button>
+             </Link>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

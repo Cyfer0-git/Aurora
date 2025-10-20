@@ -1,0 +1,113 @@
+import type { User, Task, Announcement, Report } from '@/lib/definitions';
+
+export const users: User[] = [
+  {
+    id: '1',
+    name: 'Jane Doe (Admin)',
+    email: 'admin@aurora.com',
+    avatarUrl: 'https://picsum.photos/seed/user1/40/40',
+    role: 'admin',
+  },
+  {
+    id: '2',
+    name: 'John Smith',
+    email: 'john@aurora.com',
+    avatarUrl: 'https://picsum.photos/seed/user2/40/40',
+    role: 'member',
+  },
+  {
+    id: '3',
+    name: 'Alex Ray',
+    email: 'alex@aurora.com',
+    avatarUrl: 'https://picsum.photos/seed/user3/40/40',
+    role: 'member',
+  },
+];
+
+export const tasks: Task[] = [
+  {
+    id: 'task-1',
+    title: 'Design Q3 Marketing Campaign',
+    description: 'Create visuals and copy for the upcoming Q3 marketing push.',
+    assignedTo: '2',
+    assignedBy: '1',
+    dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+    status: 'In Progress',
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'task-2',
+    title: 'Develop New Dashboard Feature',
+    description: 'Implement the real-time analytics widget on the main dashboard.',
+    assignedTo: '3',
+    assignedBy: '1',
+    dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+    status: 'To-Do',
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'task-3',
+    title: 'Review User Feedback from April',
+    description: 'Analyze all user feedback submitted in April and compile a summary report.',
+    assignedTo: '2',
+    assignedBy: '1',
+    dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    status: 'To-Do',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'task-4',
+    title: 'Prepare Onboarding Docs for New Hires',
+    description: 'Update the company handbook and role-specific documentation.',
+    assignedTo: '1',
+    assignedBy: '1',
+    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    status: 'Done',
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+export const announcements: Announcement[] = [
+  {
+    id: 'ann-1',
+    title: 'Q2 Performance Review',
+    content: 'Great work everyone on hitting our Q2 targets! Let\'s keep the momentum going into Q3. A detailed report will be shared by end of day.',
+    author: 'Jane Doe (Admin)',
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'ann-2',
+    title: 'Company Offsite Event - Save the Date!',
+    content: 'Mark your calendars for our annual company offsite retreat on the first weekend of August. More details to follow soon!',
+    author: 'Jane Doe (Admin)',
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'ann-3',
+    title: 'New Feature Launch: Real-time Collaboration',
+    content: 'We are excited to announce the launch of real-time document collaboration. Please test it out and share your feedback.',
+    author: 'Jane Doe (Admin)',
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+export const reports: Report[] = [
+    {
+        id: 'rep-1',
+        userId: '2',
+        content: 'Completed the initial mockups for the Q3 campaign. Started working on the video ad script.',
+        submittedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+        id: 'rep-2',
+        userId: '3',
+        content: 'Set up the project structure for the new dashboard feature. Integrated the charting library.',
+        submittedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+        id: 'rep-3',
+        userId: '2',
+        content: 'Finalized the social media assets for the Q3 campaign. Sent for review.',
+        submittedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    }
+];

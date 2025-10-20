@@ -4,8 +4,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -32,14 +30,13 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Calendar } from '@/components/ui/calendar';
-import { tasks, users } from '@/lib/data';
-import type { Task } from '@/lib/definitions';
+import type { Task, User } from '@/lib/definitions';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CalendarIcon, PlusCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -53,6 +50,9 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from 'firebase/firestore';
+
 
 const taskSchema = z.object({
   title: z.string().min(3, { message: 'Title must be at least 3 characters.' }),
@@ -66,36 +66,68 @@ const taskSchema = z.object({
 export default function ManageTasksPage() {
   const { user: adminUser } = useAuth();
   const { toast } = useToast();
-  const [allTasks, setAllTasks] = useState<Task[]>(tasks);
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const tasksQuery = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+    const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
+      const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
+      setAllTasks(tasksData);
+      if (users.length > 0) setIsLoading(false);
+    });
+
+    const usersQuery = collection(db, 'users');
+    const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      setUsers(usersData);
+      if (allTasks.length > 0 || snapshot.empty) setIsLoading(false);
+    });
+
+    return () => {
+      tasksUnsubscribe();
+      usersUnsubscribe();
+    }
+  }, []);
 
   const form = useForm<z.infer<typeof taskSchema>>({
     resolver: zodResolver(taskSchema),
     defaultValues: { title: '', description: '' },
   });
 
-  function onSubmit(values: z.infer<typeof taskSchema>) {
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
-      title: values.title,
-      description: values.description,
-      assignedTo: values.assignedTo,
-      assignedBy: adminUser!.id,
-      dueDate: values.dueDate.toISOString(),
-      status: 'To-Do',
-      createdAt: new Date().toISOString(),
-    };
-    setAllTasks((prev) => [newTask, ...prev]);
-    toast({
-      title: 'Task Created',
-      description: `"${values.title}" has been assigned.`,
-    });
-    form.reset();
+  async function onSubmit(values: z.infer<typeof taskSchema>) {
+    if (!adminUser) return;
+    try {
+      await addDoc(collection(db, 'tasks'), {
+        title: values.title,
+        description: values.description,
+        assignedTo: values.assignedTo,
+        assignedBy: adminUser.id,
+        dueDate: values.dueDate,
+        status: 'To-Do',
+        createdAt: serverTimestamp(),
+      });
+      toast({
+        title: 'Task Created',
+        description: `"${values.title}" has been assigned.`,
+      });
+      form.reset();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Could not create task.',
+      });
+      console.error(error);
+    }
   }
 
   const getInitials = (name: string) => {
+    if(!name) return '';
     const names = name.split(' ');
     if (names.length > 1) {
-      return `${names[0][0]}${names[names.length-1][0]}`;
+      return `${names[0][0]}${names[names.length - 1][0]}`;
     }
     return names[0].substring(0, 2);
   }
@@ -239,8 +271,9 @@ export default function ManageTasksPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {allTasks.map((task) => {
+                  {isLoading ? <TableRow><TableCell colSpan={4} className='text-center py-4'>Loading tasks...</TableCell></TableRow> : allTasks.map((task) => {
                     const assignedUser = getUserById(task.assignedTo);
+                    const dueDate = task.dueDate?.seconds ? new Date(task.dueDate.seconds * 1000) : new Date(task.dueDate);
                     return (
                         <TableRow key={task.id}>
                             <TableCell className='font-medium'>{task.title}</TableCell>
@@ -255,7 +288,7 @@ export default function ManageTasksPage() {
                                     </div>
                                 )}
                             </TableCell>
-                            <TableCell>{format(new Date(task.dueDate), 'MMM d, yyyy')}</TableCell>
+                            <TableCell>{format(dueDate, 'MMM d, yyyy')}</TableCell>
                             <TableCell>
                                 <Badge variant={task.status === 'Done' ? 'default' : task.status === 'In Progress' ? 'secondary' : 'outline'} className={cn(task.status === 'Done' && 'bg-green-600')}>{task.status}</Badge>
                             </TableCell>

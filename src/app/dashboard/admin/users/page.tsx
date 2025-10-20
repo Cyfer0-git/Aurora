@@ -24,7 +24,6 @@ import {
   DialogFooter,
   DialogClose
 } from '@/components/ui/dialog';
-import { users } from '@/lib/data';
 import { cn } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -48,53 +47,83 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/lib/definitions';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PlusCircle } from 'lucide-react';
+import { collection, onSnapshot, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const newUserSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
   email: z.string().email({ message: 'Invalid email address.' }),
   role: z.enum(['admin', 'member'], { required_error: 'Role is required.' }),
+  // Password is handled by a separate function, not in this form.
 });
 
 export default function ManageUsersPage() {
-  const [userList, setUserList] = useState<User[]>(users);
+  const [userList, setUserList] = useState<User[]>([]);
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const q = collection(db, 'users');
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const users: User[] = [];
+      querySnapshot.forEach((doc) => {
+        users.push({ id: doc.id, ...doc.data() } as User);
+      });
+      setUserList(users);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),
     defaultValues: { name: '', email: '', role: 'member' },
   });
 
-  function onSubmit(values: z.infer<typeof newUserSchema>) {
-    const existingUser = userList.find((u) => u.email === values.email);
-    if (existingUser) {
+  // Note: This form adds a user to the Firestore 'users' collection, but it does not
+  // create an authentication entry in Firebase Auth. The user will need to be invited
+  // or a separate admin function to create auth users needs to be implemented.
+  async function onSubmit(values: z.infer<typeof newUserSchema>) {
+    // Check if user already exists
+    const userExists = userList.some(user => user.email === values.email);
+    if(userExists){
       toast({
-        variant: 'destructive',
-        title: 'User already exists',
-        description: 'A user with this email is already in the system.',
-      });
+        variant: "destructive",
+        title: "User already exists",
+        description: "A user with this email is already in the system.",
+      })
       return;
     }
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      name: values.name,
-      email: values.email,
-      role: values.role as 'admin' | 'member',
-      avatarUrl: `https://picsum.photos/seed/${userList.length + 1}/40/40`,
-    };
-    users.push(newUser);
-    setUserList([...users]);
-    toast({
-      title: 'User Created',
-      description: `${newUser.name} has been added to the team.`,
-    });
-    form.reset();
-    setIsDialogOpen(false);
+
+    try {
+      await addDoc(collection(db, 'users'), {
+        name: values.name,
+        email: values.email,
+        role: values.role,
+        avatarUrl: `https://picsum.photos/seed/${userList.length + 1}/40/40`,
+      });
+
+      toast({
+        title: 'User Created',
+        description: `${values.name} has been added to the team.`,
+      });
+      form.reset();
+      setIsDialogOpen(false);
+    } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Error creating user",
+        description: "An error occurred while adding the user.",
+      });
+      console.error("Error adding document: ", error);
+    }
   }
 
   const getInitials = (name: string) => {
+    if(!name) return '';
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length - 1][0]}`;
@@ -120,7 +149,7 @@ export default function ManageUsersPage() {
                 <DialogHeader>
                   <DialogTitle>Add New User</DialogTitle>
                   <DialogDescription>
-                    Create a new team member and assign them a role.
+                    Create a new team member and assign them a role. They will need to sign up to set their password.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -199,7 +228,11 @@ export default function ManageUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {userList.map((user) => (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-10">Loading users...</TableCell>
+                </TableRow>
+              ) : userList.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">

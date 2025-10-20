@@ -1,18 +1,25 @@
 'use client';
 
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import { users } from '@/lib/data';
+import { useRouter, usePathname } from 'next/navigation';
+import { auth, db } from '@/lib/firebase';
+import {
+  onAuthStateChanged,
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string) => Promise<void>;
-  logout: () => void;
-  signup: (name: string, email: string) => Promise<void>;
   loading: boolean;
+  logout: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (name: string, email: string, password: string) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,93 +28,114 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
   const { toast } = useToast();
 
+  const publicRoutes = ['/', '/signup'];
+
   useEffect(() => {
-    // Mock session check
-    try {
-      const storedUser = sessionStorage.getItem('aurora-user');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists()) {
+          setUser({ id: firebaseUser.uid, ...userDoc.data() } as User);
+        } else {
+          // Handle case where user exists in Auth but not Firestore
+          setUser(null);
+        }
+      } else {
+        setUser(null);
       }
-    } catch (error) {
-      console.error("Could not parse user from session storage", error);
-    } finally {
       setLoading(false);
-    }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const login = async (email: string) => {
-    const foundUser = users.find((u) => u.email === email);
-    if (foundUser) {
-      setUser(foundUser);
-      sessionStorage.setItem('aurora-user', JSON.stringify(foundUser));
-      toast({
-        title: 'Login Successful',
-        description: `Welcome back, ${foundUser.name}!`,
-      });
-      router.push('/dashboard');
-    } else {
+  const login = async (email: string, password: string) => {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+      if (userDoc.exists()) {
+        toast({
+          title: 'Login Successful',
+          description: `Welcome back, ${userDoc.data().name}!`,
+        });
+        router.push('/dashboard');
+      }
+    } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Login Failed',
-        description: 'No user found with that email.',
+        description: 'Invalid credentials. Please try again.',
       });
+      console.error("Login error:", error);
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    sessionStorage.removeItem('aurora-user');
-    router.push('/');
-  };
+  const signup = async (name: string, email: string, password: string) => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const { user: firebaseUser } = userCredential;
 
-  const signup = async (name: string, email: string) => {
-    const existingUser = users.find((u) => u.email === email);
-    if (existingUser) {
+      const role = email === 'avay.gupta@auroramy.com' ? 'admin' : 'member';
+      
+      const newUser: User = {
+        id: firebaseUser.uid,
+        name,
+        email,
+        avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+        role,
+      };
+
+      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+      setUser(newUser);
+      
+      toast({
+        title: 'Signup Successful',
+        description: `Welcome, ${name}!`,
+      });
+      router.push('/dashboard');
+
+    } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Signup Failed',
-        description: 'A user with this email already exists.',
+        description: error.message || 'An unexpected error occurred.',
       });
-      return;
+      console.error("Signup error:", error);
     }
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      name,
-      email,
-      avatarUrl: `https://picsum.photos/seed/user${users.length + 1}/40/40`,
-      role: 'member',
-    };
-    // Add the new user to our mock database
-    users.push(newUser);
-    
-    // Log the user in directly after signup
-    setUser(newUser);
-    sessionStorage.setItem('aurora-user', JSON.stringify(newUser));
-    toast({
-      title: 'Signup Successful',
-      description: `Welcome, ${newUser.name}!`,
-    });
-    router.push('/dashboard');
   };
 
-  if (loading) {
+  const logout = async () => {
+    await signOut(auth);
+    setUser(null);
+    router.push('/');
+  };
+
+  if (loading && !publicRoutes.includes(pathname)) {
     return (
-       <div className="flex items-center justify-center h-screen">
-          <div className="flex flex-col items-center gap-4">
-             <Skeleton className="h-12 w-12 rounded-full" />
-             <div className="space-y-2">
-                <Skeleton className="h-4 w-[250px]" />
-                <Skeleton className="h-4 w-[200px]" />
-             </div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-[250px]" />
+            <Skeleton className="h-4 w-[200px]" />
           </div>
-       </div>
-    )
+        </div>
+      </div>
+    );
   }
 
+  if (!loading && !user && !publicRoutes.includes(pathname)) {
+    router.push('/');
+    return null; // or a loading spinner
+  }
+
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, signup, loading }}>
+    <AuthContext.Provider value={{ user, loading, logout, login, signup }}>
       {children}
     </AuthContext.Provider>
   );

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   CardFooter,
@@ -21,8 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/use-auth';
-import { reports, users } from '@/lib/data';
-import type { Report } from '@/lib/definitions';
+import type { Report, User } from '@/lib/definitions';
 import { format } from 'date-fns';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -30,14 +28,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -47,6 +44,8 @@ import {
 } from '@/components/ui/popover';
 import { CalendarIcon, File, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, onSnapshot, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
 
 const reportSchema = z.object({
   shiftType: z.enum(['morning', 'evening', 'night'], {
@@ -73,9 +72,26 @@ const reportSchema = z.object({
 export default function ReportsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [allReports, setAllReports] = useState<Report[]>(reports);
+  const [userReports, setUserReports] = useState<Report[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'reports'), 
+      where('userId', '==', user.id), 
+      orderBy('submittedAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
+      setUserReports(reportsData);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+  
   const getInitials = (name: string) => {
+    if(!name) return '';
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length - 1][0]}`;
@@ -100,30 +116,30 @@ export default function ReportsPage() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof reportSchema>) {
-    const newReport: Report = {
-      id: `rep-${Date.now()}`,
-      userId: user!.id,
-      ...values,
-      date: values.date.toISOString(),
-      content: values.content || 'N/A',
-      submittedAt: new Date().toISOString(),
-    };
-    reports.unshift(newReport);
-    setAllReports([...reports]);
-    toast({
-      title: 'Report Submitted',
-      description: 'Your daily report has been successfully submitted.',
-    });
-    form.reset();
+  async function onSubmit(values: z.infer<typeof reportSchema>) {
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, 'reports'), {
+        ...values,
+        userId: user.id,
+        content: values.content || 'N/A',
+        submittedAt: serverTimestamp(),
+      });
+      toast({
+        title: 'Report Submitted',
+        description: 'Your daily report has been successfully submitted.',
+      });
+      form.reset();
+    } catch(error) {
+        toast({
+            variant: "destructive",
+            title: "Submission Failed",
+            description: "Could not submit your report.",
+        });
+        console.error(error);
+    }
   }
-
-  const userReports = allReports.filter((r) => r.userId === user?.id);
-
-  const sortedReports = [...userReports].sort(
-    (a, b) =>
-      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-  );
 
   return (
     <div>
@@ -364,35 +380,37 @@ export default function ReportsPage() {
         <div>
           <h2 className="text-2xl font-semibold mb-4">Your Past Reports</h2>
           <div className="space-y-4">
-            {sortedReports.length > 0 ? (
-              sortedReports.map((report) => {
-                const reportUser = users.find((u) => u.id === report.userId);
+            {isLoading ? <p>Loading reports...</p> : userReports.length > 0 ? (
+              userReports.map((report) => {
+                const submittedAtDate = report.submittedAt?.seconds ? new Date(report.submittedAt.seconds * 1000) : new Date();
+                const reportDate = report.date?.seconds ? new Date(report.date.seconds * 1000) : new Date(report.date);
+
                 return (
                   <Card key={report.id}>
                     <CardHeader>
                       <div className="flex items-start gap-4">
-                        {reportUser && (
+                        {user && (
                           <Avatar className="h-12 w-12">
-                            <AvatarImage src={reportUser.avatarUrl} />
+                            <AvatarImage src={user.avatarUrl} />
                             <AvatarFallback>
-                              {getInitials(reportUser.name)}
+                              {getInitials(user.name)}
                             </AvatarFallback>
                           </Avatar>
                         )}
                         <div className="w-full">
                           <div className="flex justify-between items-center">
                             <p className="font-semibold text-lg">
-                              {reportUser?.name}
+                              {user?.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {format(
-                                new Date(report.submittedAt),
+                                submittedAtDate,
                                 'PPP p'
                               )}
                             </p>
                           </div>
                            <p className="text-sm text-muted-foreground">
-                            Shift: <span className="capitalize">{report.shiftType}</span> | Report for: {format(new Date(report.date), 'PPP')}
+                            Shift: <span className="capitalize">{report.shiftType}</span> | Report for: {format(reportDate, 'PPP')}
                            </p>
                         </div>
                       </div>

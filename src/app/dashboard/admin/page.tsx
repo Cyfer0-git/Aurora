@@ -1,3 +1,4 @@
+'use client';
 import { PageHeader } from '@/components/page-header';
 import {
   Card,
@@ -6,16 +7,63 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { users, tasks, reports } from '@/lib/data';
 import { Users, ClipboardList, FileText } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { collection, onSnapshot, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import type { User, Task, Report } from '@/lib/definitions';
 
 export default function AdminDashboardPage() {
-  const totalUsers = users.length;
-  const activeTasks = tasks.filter((t) => t.status !== 'Done').length;
-  const recentReports = reports.slice(0, 5);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [activeTasks, setActiveTasks] = useState(0);
+  const [reportsToday, setReportsToday] = useState(0);
+  const [recentReports, setRecentReports] = useState<Report[]>([]);
+  const [usersMap, setUsersMap] = useState<Map<string, User>>(new Map());
 
-  const getUserById = (id: string) => users.find(u => u.id === id);
+  useEffect(() => {
+    // Fetch all users and create a map
+    const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersData = new Map<string, User>();
+      snapshot.forEach(doc => usersData.set(doc.id, { id: doc.id, ...doc.data() } as User));
+      setUsersMap(usersData);
+      setTotalUsers(snapshot.size);
+    });
+
+    // Fetch active tasks
+    const tasksUnsub = onSnapshot(
+      query(collection(db, 'tasks'), where('status', '!=', 'Done')),
+      (snapshot) => {
+        setActiveTasks(snapshot.size);
+      }
+    );
+
+    // Fetch reports submitted today
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const qReports = query(
+      collection(db, 'reports'),
+      where('submittedAt', '>=', startOfToday)
+    );
+    const reportsUnsub = onSnapshot(qReports, (snapshot) => {
+      setReportsToday(snapshot.size);
+    });
+    
+    // Fetch recent reports
+    const recentReportsQuery = query(collection(db, "reports"), where("submittedAt", "!=", null), where("submittedAt", "<=", new Date()));
+    const recentReportsUnsub = onSnapshot(recentReportsQuery, (snapshot) => {
+       setRecentReports(snapshot.docs.map(doc => doc.data() as Report).slice(0, 5));
+    })
+
+    return () => {
+      usersUnsub();
+      tasksUnsub();
+      reportsUnsub();
+      recentReportsUnsub();
+    };
+  }, []);
+
+  const getUserById = (id: string) => usersMap.get(id);
 
   return (
     <div>
@@ -54,7 +102,7 @@ export default function AdminDashboardPage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{reports.filter(r => new Date(r.submittedAt).toDateString() === new Date().toDateString()).length}</div>
+            <div className="text-2xl font-bold">{reportsToday}</div>
             <p className="text-xs text-muted-foreground">
               submissions in the last 24 hours
             </p>

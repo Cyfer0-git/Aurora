@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a user in the system.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique identifier for the user."
+        },
+        "name": {
+          "type": "string",
+          "description": "The user's full name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL for the user's avatar image."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "member"],
+          "description": "The role of the user."
+        }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Represents a task assigned to a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "assignedBy": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["To-Do", "In Progress", "Done"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "assignedTo", "assignedBy", "dueDate", "status", "createdAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Represents a company announcement.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "content", "author", "authorId", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Represents a daily user report.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "shiftType": { "type": "string", "enum": ["morning", "evening", "night"] },
+        "date": { "type": "string", "format": "date-time" },
+        "chatClosed": { "type": "number" },
+        "aidCase": { "type": "number" },
+        "call": { "type": "number" },
+        "loginHours": { "type": "string" },
+        "satisfaction": { "type": "number" },
+        "frt": { "type": "string" },
+        "art": { "type": "string" },
+        "otherTask": { "type": "string" },
+        "typingSpeed": { "type": "number" },
+        "qaSheetCheck": { "type": "boolean" },
+        "content": { "type": "string" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "date", "submittedAt"]
+    }
+  },
+  "auth": {
+    "providers": ["email"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profile information."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Stores tasks assigned to users."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Stores company announcements."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Stores daily user reports."
+    }
+  }
+}

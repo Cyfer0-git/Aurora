@@ -1,15 +1,41 @@
+'use client';
 import { PageHeader } from '@/components/page-header';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { reports, users } from '@/lib/data';
 import { format } from 'date-fns';
+import { useState, useEffect } from 'react';
+import type { Report, User } from '@/lib/definitions';
+import { db } from '@/lib/firebase';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 export default function ViewReportsPage() {
-  const sortedReports = [...reports].sort(
-    (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-  );
-  
+  const [sortedReports, setSortedReports] = useState<Report[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const reportsQuery = query(collection(db, 'reports'), orderBy('submittedAt', 'desc'));
+    const reportsUnsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+      const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
+      setSortedReports(reportsData);
+      if(users.length > 0) setIsLoading(false);
+    });
+
+    const usersQuery = collection(db, 'users');
+    const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      setUsers(usersData);
+      if(sortedReports.length > 0 || snapshot.empty) setIsLoading(false);
+    });
+
+    return () => {
+      reportsUnsubscribe();
+      usersUnsubscribe();
+    }
+  }, []);
+
   const getInitials = (name: string) => {
+    if(!name) return '';
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length-1][0]}`;
@@ -26,8 +52,11 @@ export default function ViewReportsPage() {
         subtitle="Review daily updates from all team members."
       />
       <div className="space-y-4">
-        {sortedReports.map((report) => {
+        {isLoading ? <p>Loading reports...</p> : sortedReports.map((report) => {
           const user = getUserById(report.userId);
+          const submittedAtDate = report.submittedAt?.seconds ? new Date(report.submittedAt.seconds * 1000) : new Date();
+          const reportDate = report.date?.seconds ? new Date(report.date.seconds * 1000) : new Date(report.date);
+
           return (
             <Card key={report.id}>
               <CardHeader>
@@ -42,11 +71,11 @@ export default function ViewReportsPage() {
                     <div className="flex justify-between items-center">
                       <p className="font-semibold text-lg">{user?.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {format(new Date(report.submittedAt), 'PPP p')}
+                        {format(submittedAtDate, 'PPP p')}
                       </p>
                     </div>
                      <p className="text-sm text-muted-foreground">
-                      Shift: <span className="capitalize">{report.shiftType}</span> | Report for: {format(new Date(report.date), 'PPP')}
+                      Shift: <span className="capitalize">{report.shiftType}</span> | Report for: {format(reportDate, 'PPP')}
                      </p>
                   </div>
                 </div>

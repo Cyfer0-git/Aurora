@@ -18,9 +18,11 @@ import {
   Square,
   Timer,
 } from 'lucide-react';
-import { tasks, announcements } from '@/lib/data';
 import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import type { Task, Announcement } from '@/lib/definitions';
+import { db } from '@/lib/firebase';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 function BreakTimer() {
   const [isOnBreak, setIsOnBreak] = useState(false);
@@ -103,10 +105,27 @@ function BreakTimer() {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const userTasks = tasks.filter(
-    (task) => task.assignedTo === user?.id && task.status !== 'Done'
-  );
-  const recentAnnouncements = announcements.slice(0, 2);
+  const [userTasks, setUserTasks] = useState<Task[]>([]);
+  const [recentAnnouncements, setRecentAnnouncements] = useState<Announcement[]>([]);
+
+  useEffect(() => {
+    if(!user) return;
+    
+    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id), where('status', '!=', 'Done'));
+    const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
+      setUserTasks(snapshot.docs.map(doc => ({id: doc.id, ...doc.data() } as Task)));
+    });
+
+    const announcementsQuery = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(2));
+    const announcementsUnsubscribe = onSnapshot(announcementsQuery, (snapshot) => {
+      setRecentAnnouncements(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Announcement)));
+    });
+
+    return () => {
+      tasksUnsubscribe();
+      announcementsUnsubscribe();
+    }
+  }, [user]);
 
   return (
     <div>
@@ -129,7 +148,9 @@ export default function DashboardPage() {
           <CardContent>
             {userTasks.length > 0 ? (
               <ul className="space-y-4">
-                {userTasks.slice(0, 3).map((task) => (
+                {userTasks.slice(0, 3).map((task) => {
+                   const dueDate = task.dueDate?.seconds ? new Date(task.dueDate.seconds * 1000) : new Date(task.dueDate);
+                  return(
                   <li
                     key={task.id}
                     className="flex items-center justify-between"
@@ -137,7 +158,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="font-semibold">{task.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        Due: {format(new Date(task.dueDate), 'PPP')}
+                        Due: {format(dueDate, 'PPP')}
                       </p>
                     </div>
                     <Link href="/dashboard/tasks">
@@ -146,7 +167,7 @@ export default function DashboardPage() {
                       </Button>
                     </Link>
                   </li>
-                ))}
+                )})}
               </ul>
             ) : (
               <p className="text-muted-foreground">No active tasks. Great job!</p>
@@ -173,15 +194,17 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-6">
-              {recentAnnouncements.map((ann) => (
+              {recentAnnouncements.map((ann) => {
+                const createdAtDate = ann.createdAt?.seconds ? new Date(ann.createdAt.seconds * 1000) : new Date();
+                return (
                 <li key={ann.id}>
                   <p className="text-sm text-muted-foreground">
-                    {formatDistanceToNow(new Date(ann.createdAt), { addSuffix: true })} by {ann.author}
+                    {formatDistanceToNow(createdAtDate, { addSuffix: true })} by {ann.author}
                   </p>
                   <h3 className="font-semibold text-lg mt-1">{ann.title}</h3>
                   <p className="text-muted-foreground mt-1">{ann.content}</p>
                 </li>
-              ))}
+              )})}
             </ul>
              <Link href="/dashboard/announcements" className='mt-4 inline-block'>
                 <Button variant="secondary">View All Announcements</Button>

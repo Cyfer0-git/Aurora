@@ -1,3 +1,4 @@
+'use client';
 import { PageHeader } from '@/components/page-header';
 import {
   Card,
@@ -6,14 +7,30 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { announcements } from '@/lib/data';
 import { formatDistanceToNow } from 'date-fns';
 import { Megaphone } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import type { Announcement } from '@/lib/definitions';
+import { db } from '@/lib/firebase';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+
 
 export default function AnnouncementsPage() {
-  const sortedAnnouncements = [...announcements].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  const [sortedAnnouncements, setSortedAnnouncements] = useState<Announcement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const announcementsData: Announcement[] = [];
+      querySnapshot.forEach((doc) => {
+        announcementsData.push({ id: doc.id, ...doc.data() } as Announcement);
+      });
+      setSortedAnnouncements(announcementsData);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div>
@@ -22,7 +39,7 @@ export default function AnnouncementsPage() {
         subtitle="Stay up-to-date with the latest news and updates."
       />
       <div className="space-y-6">
-        {sortedAnnouncements.map((announcement) => (
+        {isLoading ? <p>Loading announcements...</p> : sortedAnnouncements.map((announcement) => (
           <Card key={announcement.id}>
             <CardHeader>
               <div className="flex items-start justify-between">
@@ -30,9 +47,9 @@ export default function AnnouncementsPage() {
                   <CardTitle>{announcement.title}</CardTitle>
                   <CardDescription className="mt-1">
                     Posted by {announcement.author} &bull;{' '}
-                    {formatDistanceToNow(new Date(announcement.createdAt), {
+                    {announcement.createdAt ? formatDistanceToNow(new Date(announcement.createdAt.seconds * 1000), {
                       addSuffix: true,
-                    })}
+                    }) : 'Just now'}
                   </CardDescription>
                 </div>
                 <div className='p-3 bg-secondary rounded-full'>

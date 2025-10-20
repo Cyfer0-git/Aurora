@@ -7,9 +7,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { tasks, users } from '@/lib/data';
 import { useAuth } from '@/hooks/use-auth';
-import type { Task } from '@/lib/definitions';
+import type { Task, User } from '@/lib/definitions';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import {
@@ -21,21 +20,31 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, doc, updateDoc, query, where } from 'firebase/firestore';
 
-function TaskCard({ task }: { task: Task }) {
-  // Local state to manage task status for demonstration
+function TaskCard({ task, assignedBy }: { task: Task; assignedBy: User | undefined }) {
   const [status, setStatus] = useState(task.status);
   
   const getInitials = (name: string) => {
+    if (!name) return '';
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length-1][0]}`;
     }
     return names[0].substring(0, 2);
   }
+  
+  const handleStatusChange = async (newStatus: Task['status']) => {
+    setStatus(newStatus);
+    const taskRef = doc(db, "tasks", task.id);
+    await updateDoc(taskRef, {
+      status: newStatus
+    });
+  }
 
-  const assignedBy = users.find((u) => u.id === task.assignedBy);
+  const dueDate = task.dueDate?.seconds ? new Date(task.dueDate.seconds * 1000) : new Date(task.dueDate);
 
   return (
     <Card>
@@ -44,7 +53,7 @@ function TaskCard({ task }: { task: Task }) {
             <div>
                 <CardTitle>{task.title}</CardTitle>
                 <CardDescription className="mt-1">
-                Due: {format(new Date(task.dueDate), 'PPP')}
+                Due: {format(dueDate, 'PPP')}
                 </CardDescription>
             </div>
             <Badge
@@ -78,7 +87,7 @@ function TaskCard({ task }: { task: Task }) {
               </>
             )}
           </div>
-          <Select value={status} onValueChange={(value) => setStatus(value as Task['status'])}>
+          <Select value={status} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Change status" />
             </SelectTrigger>
@@ -96,7 +105,34 @@ function TaskCard({ task }: { task: Task }) {
 
 export default function TasksPage() {
   const { user } = useAuth();
-  const userTasks = tasks.filter((task) => task.assignedTo === user?.id);
+  const [userTasks, setUserTasks] = useState<Task[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if(!user) return;
+
+    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id));
+    const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
+      const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
+      setUserTasks(tasksData);
+      if(users.length > 0) setIsLoading(false);
+    });
+
+    const usersQuery = collection(db, 'users');
+    const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      setUsers(usersData);
+      if(userTasks.length > 0 || snapshot.empty) setIsLoading(false);
+    });
+
+    return () => {
+      tasksUnsubscribe();
+      usersUnsubscribe();
+    }
+  }, [user]);
+
+  const getUserById = (id: string) => users.find(u => u.id === id);
 
   const todoTasks = userTasks.filter((task) => task.status === 'To-Do');
   const inProgressTasks = userTasks.filter(
@@ -110,11 +146,12 @@ export default function TasksPage() {
         title="My Tasks"
         subtitle="Here are all the tasks assigned to you."
       />
+      {isLoading ? <p>Loading tasks...</p> : 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">To-Do ({todoTasks.length})</h2>
           {todoTasks.length > 0 ? (
-            todoTasks.map((task) => <TaskCard key={task.id} task={task} />)
+            todoTasks.map((task) => <TaskCard key={task.id} task={task} assignedBy={getUserById(task.assignedBy)} />)
           ) : (
             <p className="text-muted-foreground">No tasks to do.</p>
           )}
@@ -122,7 +159,7 @@ export default function TasksPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">In Progress ({inProgressTasks.length})</h2>
           {inProgressTasks.length > 0 ? (
-            inProgressTasks.map((task) => <TaskCard key={task.id} task={task} />)
+            inProgressTasks.map((task) => <TaskCard key={task.id} task={task} assignedBy={getUserById(task.assignedBy)} />)
           ) : (
             <p className="text-muted-foreground">No tasks in progress.</p>
           )}
@@ -130,12 +167,12 @@ export default function TasksPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Done ({doneTasks.length})</h2>
           {doneTasks.length > 0 ? (
-            doneTasks.map((task) => <TaskCard key={task.id} task={task} />)
+            doneTasks.map((task) => <TaskCard key={task.id} task={task} assignedBy={getUserById(task.assignedBy)} />)
           ) : (
             <p className="text-muted-foreground">No tasks completed yet.</p>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

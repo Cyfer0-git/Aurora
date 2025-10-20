@@ -53,11 +53,11 @@ export function AuthForm({ mode }: AuthFormProps) {
     setIsLoading(true);
     try {
       if (mode === 'login') {
-        const { email } = values as z.infer<typeof loginSchema>;
-        await login(email);
+        const { email, password } = values as z.infer<typeof loginSchema>;
+        await login(email, password);
       } else {
-        const { name, email } = values as z.infer<typeof signupSchema>;
-        await signup(name, email);
+        const { name, email, password } = values as z.infer<typeof signupSchema>;
+        await signup(name, email, password);
       }
     } catch (error) {
       console.error(error);

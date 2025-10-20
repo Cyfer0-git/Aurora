@@ -1,3 +1,5 @@
+import { Timestamp } from "firebase/firestore";
+
 export type User = {
   id: string;
   name: string;
@@ -12,9 +14,9 @@ export type Task = {
   description: string;
   assignedTo: string; // User ID
   assignedBy: string; // User ID
-  dueDate: string;
+  dueDate: Timestamp | string;
   status: 'To-Do' | 'In Progress' | 'Done';
-  createdAt: string;
+  createdAt: Timestamp;
 };
 
 export type Announcement = {
@@ -22,14 +24,15 @@ export type Announcement = {
   title: string;
   content: string;
   author: string; // User name
-  createdAt: string;
+  authorId: string; // User ID
+  createdAt: Timestamp;
 };
 
 export type Report = {
   id: string;
   userId: string;
   shiftType: 'morning' | 'evening' | 'night';
-  date: string;
+  date: Timestamp | string;
   chatClosed: number;
   aidCase: number;
   call: number;
@@ -40,6 +43,6 @@ export type Report = {
   otherTask: string;
   typingSpeed: number;
   qaSheetCheck: boolean;
-  content: string; // Keep for backward compatibility or summary
-  submittedAt: string;
+  content: string; 
+  submittedAt: Timestamp;
 };

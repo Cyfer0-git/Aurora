@@ -37,7 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { CalendarIcon, PlusCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -71,19 +71,28 @@ export default function ManageTasksPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const tasksLoaded = useRef(false);
+  const usersLoaded = useRef(false);
+
   useEffect(() => {
     const tasksQuery = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
       const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
       setAllTasks(tasksData);
-      if (users.length > 0) setIsLoading(false);
+      tasksLoaded.current = true;
+      if (usersLoaded.current) {
+        setIsLoading(false);
+      }
     });
 
     const usersQuery = collection(db, 'users');
     const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
       const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       setUsers(usersData);
-      if (allTasks.length > 0 || snapshot.empty) setIsLoading(false);
+      usersLoaded.current = true;
+      if (tasksLoaded.current) {
+        setIsLoading(false);
+      }
     });
 
     return () => {

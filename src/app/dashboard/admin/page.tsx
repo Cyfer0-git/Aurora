@@ -10,7 +10,7 @@ import {
 import { Users, ClipboardList, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs, Timestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User, Task, Report } from '@/lib/definitions';
 
@@ -50,9 +50,13 @@ export default function AdminDashboardPage() {
     });
     
     // Fetch recent reports
-    const recentReportsQuery = query(collection(db, "reports"), where("submittedAt", "!=", null), where("submittedAt", "<=", new Date()));
+    const recentReportsQuery = query(
+        collection(db, "reports"), 
+        orderBy("submittedAt", "desc"), 
+        limit(5)
+    );
     const recentReportsUnsub = onSnapshot(recentReportsQuery, (snapshot) => {
-       setRecentReports(snapshot.docs.map(doc => doc.data() as Report).slice(0, 5));
+       setRecentReports(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Report)));
     })
 
     return () => {
@@ -133,4 +137,3 @@ export default function AdminDashboardPage() {
       </Card>
     </div>
   );
-}

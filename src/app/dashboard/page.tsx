@@ -111,9 +111,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if(!user) return;
     
-    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id), where('status', '!=', 'Done'));
+    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
-      setUserTasks(snapshot.docs.map(doc => ({id: doc.id, ...doc.data() } as Task)));
+      const allTasks = snapshot.docs.map(doc => ({id: doc.id, ...doc.data() } as Task));
+      const activeTasks = allTasks.filter(task => task.status !== 'Done');
+      setUserTasks(activeTasks);
     });
 
     const announcementsQuery = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(2));

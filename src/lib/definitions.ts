@@ -28,6 +28,18 @@ export type Announcement = {
 export type Report = {
   id: string;
   userId: string;
-  content: string;
+  shiftType: 'morning' | 'evening' | 'night';
+  date: string;
+  chatClosed: number;
+  aidCase: number;
+  call: number;
+  loginHours: string;
+  satisfaction: number;
+  frt: string;
+  art: string;
+  otherTask: string;
+  typingSpeed: number;
+  qaSheetCheck: boolean;
+  content: string; // Keep for backward compatibility or summary
   submittedAt: string;
 };

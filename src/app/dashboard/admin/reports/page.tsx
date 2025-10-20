@@ -1,6 +1,6 @@
 import { PageHeader } from '@/components/page-header';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { reports, users } from '@/lib/data';
 import { format } from 'date-fns';
 
@@ -30,23 +30,62 @@ export default function ViewReportsPage() {
           const user = getUserById(report.userId);
           return (
             <Card key={report.id}>
-              <CardContent className="pt-6">
+              <CardHeader>
                 <div className="flex items-start gap-4">
                   {user && (
-                    <Avatar className='h-10 w-10'>
+                    <Avatar className='h-12 w-12'>
                       <AvatarImage src={user.avatarUrl} alt={user.name} />
                       <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                     </Avatar>
                   )}
                   <div className="w-full">
                     <div className="flex justify-between items-center">
-                      <p className="font-semibold">{user?.name}</p>
+                      <p className="font-semibold text-lg">{user?.name}</p>
                       <p className="text-sm text-muted-foreground">
                         {format(new Date(report.submittedAt), 'PPP p')}
                       </p>
                     </div>
-                    <p className="text-muted-foreground mt-2">{report.content}</p>
+                     <p className="text-sm text-muted-foreground">
+                      Shift: <span className="capitalize">{report.shiftType}</span> | Report for: {format(new Date(report.date), 'PPP')}
+                     </p>
                   </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground mb-4">{report.content}</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">Login Hours</span>
+                      <span className="font-semibold">{report.loginHours}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">Satisfaction</span>
+                      <span className="font-semibold">{report.satisfaction}%</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">Chats Closed</span>
+                      <span className="font-semibold">{report.chatClosed}</span>
+                    </div>
+                     <div className="flex flex-col">
+                      <span className="text-muted-foreground">Calls</span>
+                      <span className="font-semibold">{report.call}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">AID Cases</span>
+                      <span className="font-semibold">{report.aidCase}</span>
+                    </div>
+                     <div className="flex flex-col">
+                      <span className="text-muted-foreground">Typing Speed</span>
+                      <span className="font-semibold">{report.typingSpeed} WPM</span>
+                    </div>
+                     <div className="flex flex-col">
+                      <span className="text-muted-foreground">Other Task</span>
+                      <span className="font-semibold">{report.otherTask || 'N/A'}</span>
+                    </div>
+                     <div className="flex flex-col">
+                      <span className="text-muted-foreground">QA Check</span>
+                      <span className="font-semibold">{report.qaSheetCheck ? "Yes" : "No"}</span>
+                    </div>
                 </div>
               </CardContent>
             </Card>

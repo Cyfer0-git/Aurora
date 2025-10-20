@@ -12,7 +12,7 @@ import {
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Loader2 } from 'lucide-react';
 
 interface AuthContextType {
   user: User | null;
@@ -41,8 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDoc.exists()) {
           setUser({ id: firebaseUser.uid, ...userDoc.data() } as User);
         } else {
-          // Handle case where user exists in Auth but not Firestore
+          // This can happen if the user is in Auth but not in Firestore.
+          // For this app, we'll treat them as logged out.
           setUser(null);
+          await signOut(auth); // Sign them out of Auth as well
         }
       } else {
         setUser(null);
@@ -52,6 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!loading && !user && !publicRoutes.includes(pathname)) {
+      router.push('/');
+    }
+  }, [user, loading, pathname, router]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -79,10 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const { user: firebaseUser } = userCredential;
 
-      const role = email === 'avay.gupta@auroramy.com' ? 'admin' : 'member';
-      
-      const newUser: User = {
-        id: firebaseUser.uid,
+      // Assign 'admin' role if email matches, otherwise 'member'
+      const role = email.toLowerCase() === 'avay.gupta@auroramy.com' ? 'admin' : 'member';
+
+      const newUser: Omit<User, 'id'> = {
         name,
         email,
         avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
@@ -90,19 +98,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-      setUser(newUser);
-      
+
+      // We fetch the user from onAuthStateChanged, so no need to setUser here
       toast({
         title: 'Signup Successful',
-        description: `Welcome, ${name}!`,
+        description: `Welcome, ${name}! Redirecting to your dashboard.`,
       });
       router.push('/dashboard');
 
     } catch (error: any) {
+      let errorMessage = 'An unexpected error occurred.';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already in use. Please log in.';
+      } else {
+        errorMessage = error.message;
+      }
       toast({
         variant: 'destructive',
         title: 'Signup Failed',
-        description: error.message || 'An unexpected error occurred.',
+        description: errorMessage,
       });
       console.error("Signup error:", error);
     }
@@ -114,25 +128,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/');
   };
 
+  // If loading, and on a protected route, show a loader.
   if (loading && !publicRoutes.includes(pathname)) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <Skeleton className="h-12 w-12 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-[250px]" />
-            <Skeleton className="h-4 w-[200px]" />
-          </div>
-        </div>
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
+  // If not loading, and on a protected route without a user,
+  // the useEffect above will handle the redirect. Render null to avoid flicker.
   if (!loading && !user && !publicRoutes.includes(pathname)) {
-    router.push('/');
-    return null; // or a loading spinner
+    return null;
   }
-
 
   return (
     <AuthContext.Provider value={{ user, loading, logout, login, signup }}>

@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/page-header';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { format } from 'date-fns';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Report, User } from '@/lib/definitions';
 import { db } from '@/lib/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -13,19 +13,30 @@ export default function ViewReportsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Use refs to track if the initial load has completed for each listener
+  const reportsLoaded = useRef(false);
+  const usersLoaded = useRef(false);
+
+
   useEffect(() => {
     const reportsQuery = query(collection(db, 'reports'), orderBy('submittedAt', 'desc'));
     const reportsUnsubscribe = onSnapshot(reportsQuery, (snapshot) => {
       const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
       setSortedReports(reportsData);
-      if(users.length > 0) setIsLoading(false);
+      reportsLoaded.current = true;
+      if (usersLoaded.current) {
+        setIsLoading(false);
+      }
     });
 
     const usersQuery = collection(db, 'users');
     const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
       const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       setUsers(usersData);
-      if(sortedReports.length > 0 || snapshot.empty) setIsLoading(false);
+      usersLoaded.current = true;
+      if (reportsLoaded.current) {
+        setIsLoading(false);
+      }
     });
 
     return () => {

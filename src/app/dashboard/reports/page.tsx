@@ -23,7 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/use-auth';
 import { reports, users } from '@/lib/data';
 import type { Report } from '@/lib/definitions';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -67,15 +67,13 @@ const reportSchema = z.object({
   otherTask: z.string().optional(),
   typingSpeed: z.coerce.number().min(0),
   qaSheetCheck: z.boolean().default(false),
-  content: z.string().min(10, "Please provide a brief summary.").optional(),
+  content: z.string().min(10, 'Please provide a brief summary.').optional(),
 });
 
 export default function ReportsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [userReports, setUserReports] = useState<Report[]>(
-    reports.filter((r) => r.userId === user?.id)
-  );
+  const [allReports, setAllReports] = useState<Report[]>(reports);
 
   const getInitials = (name: string) => {
     const names = name.split(' ');
@@ -111,13 +109,16 @@ export default function ReportsPage() {
       content: values.content || 'N/A',
       submittedAt: new Date().toISOString(),
     };
-    setUserReports((prev) => [newReport, ...prev]);
+    reports.unshift(newReport);
+    setAllReports([...reports]);
     toast({
       title: 'Report Submitted',
       description: 'Your daily report has been successfully submitted.',
     });
     form.reset();
   }
+
+  const userReports = allReports.filter((r) => r.userId === user?.id);
 
   const sortedReports = [...userReports].sort(
     (a, b) =>

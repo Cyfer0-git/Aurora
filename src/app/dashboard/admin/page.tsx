@@ -51,7 +51,7 @@ export default function AdminDashboardPage() {
       },
       async (serverError) => {
         const permissionError = new FirestorePermissionError({
-            path: activeTasksQuery.converter?.toString() || 'tasks',
+            path: 'tasks',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -70,7 +70,7 @@ export default function AdminDashboardPage() {
     },
     async (serverError) => {
         const permissionError = new FirestorePermissionError({
-            path: qReports.converter?.toString() || 'reports',
+            path: 'reports',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -87,7 +87,7 @@ export default function AdminDashboardPage() {
     },
     async (serverError) => {
         const permissionError = new FirestorePermissionError({
-            path: recentReportsQuery.converter?.toString() || 'reports',
+            path: 'reports',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);

@@ -72,21 +72,23 @@ export function AuthForm({ mode }: AuthFormProps) {
   const handleLogin = async (values: z.infer<typeof loginSchema>) => {
     if (!auth) return;
     setIsLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      toast({
-          title: 'Login Successful',
-          description: `Welcome back!`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: 'Invalid credentials. Please try again.',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    signInWithEmailAndPassword(auth, values.email, values.password)
+    .then(() => {
+        toast({
+            title: 'Login Successful',
+            description: `Welcome back!`,
+        });
+    })
+    .catch((error) => {
+        toast({
+            variant: 'destructive',
+            title: 'Login Failed',
+            description: 'Invalid credentials. Please try again.',
+        });
+    })
+    .finally(() => {
+        setIsLoading(false);
+    });
   }
 
   const handleSignup = async (values: z.infer<typeof signupSchema>) => {
@@ -99,102 +101,92 @@ export function AuthForm({ mode }: AuthFormProps) {
     const usersRef = collection(db, 'users');
     const q = query(usersRef, where("email", "==", email));
     
-    try {
-      const querySnapshot = await getDocs(q);
+    const querySnapshot = await getDocs(q);
 
-      let existingUserDoc: any = null;
-      let existingUserDocId: string | null = null;
-      querySnapshot.forEach((doc) => {
-          if (!doc.data().id || doc.data().id === '') {
-            existingUserDoc = doc.data();
-            existingUserDocId = doc.id;
-          }
-      });
-
-      // Step 2: Create the user in Firebase Auth.
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
-
-      // Step 3: Now that Auth user is created, create or update their Firestore document.
-      if (existingUserDoc && existingUserDocId) {
-        // This is an invited user completing signup. Update their existing document.
-        const userDocRef = doc(db, 'users', existingUserDocId);
-        const userDataToUpdate = {
-            id: firebaseUser.uid, 
-            name: name,
-            avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-        };
-        
-        // This is the operation that is likely failing.
-        // We attach a specific catch block to it.
-        await updateDoc(userDocRef, userDataToUpdate)
-          .catch(serverError => {
-            const permissionError = new FirestorePermissionError({
-                path: userDocRef.path,
-                operation: 'update',
-                requestResourceData: userDataToUpdate,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            // We re-throw to stop execution and prevent showing a success toast.
-            throw permissionError;
-          });
-
-        toast({
-          title: 'Account Activated',
-          description: `Welcome, ${name}! Your account is now active.`,
-        });
-
-      } else {
-        // This is a new, non-invited user. Create their document from scratch.
-        const newUser: User = {
-          id: firebaseUser.uid,
-          name,
-          email,
-          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-          role: 'Support', // Default role for any new signup
-        };
-        const newUserDocRef = doc(db, 'users', firebaseUser.uid);
-        
-        // This is the other operation that could be failing.
-        await setDoc(newUserDocRef, newUser)
-          .catch(serverError => {
-             const permissionError = new FirestorePermissionError({
-                path: newUserDocRef.path,
-                operation: 'create',
-                requestResourceData: newUser,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            throw permissionError;
-        });
-
-        toast({
-          title: 'Signup Successful',
-          description: `Welcome, ${name}!`,
-        });
-      }
-
-    } catch (error: any) {
-      // This will now catch auth errors OR the re-thrown permission errors.
-      if (error instanceof FirestorePermissionError) {
-        // The permission error has already been emitted, so we do nothing here.
-        // This prevents the generic toast from showing.
-      } else {
-        // Handle other errors (e.g., auth/email-already-in-use)
-        let errorMessage = 'An unexpected error occurred during signup.';
-        if (error.code === 'auth/email-already-in-use') {
-          errorMessage = 'This email is already registered. Please log in.';
-        } else {
-          errorMessage = error.message || errorMessage;
+    let existingUserDoc: any = null;
+    let existingUserDocId: string | null = null;
+    querySnapshot.forEach((doc) => {
+        if (!doc.data().id || doc.data().id === '') {
+        existingUserDoc = doc.data();
+        existingUserDocId = doc.id;
         }
-        toast({
-          variant: 'destructive',
-          title: 'Signup Failed',
-          description: errorMessage,
-        });
-      }
-    } finally {
-        setIsLoading(false);
-    }
+    });
+
+    createUserWithEmailAndPassword(auth, email, password)
+      .then(async (userCredential) => {
+        const firebaseUser = userCredential.user;
+
+        if (existingUserDoc && existingUserDocId) {
+          // This is an invited user completing signup. Update their existing document.
+          const userDocRef = doc(db, 'users', existingUserDocId);
+          const userDataToUpdate = {
+              id: firebaseUser.uid, 
+              name: name,
+              avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+          };
+          
+          updateDoc(userDocRef, userDataToUpdate)
+            .then(() => {
+              toast({
+                title: 'Account Activated',
+                description: `Welcome, ${name}! Your account is now active.`,
+              });
+              setIsLoading(false);
+            })
+            .catch(serverError => {
+              const permissionError = new FirestorePermissionError({
+                  path: userDocRef.path,
+                  operation: 'update',
+                  requestResourceData: userDataToUpdate,
+              });
+              errorEmitter.emit('permission-error', permissionError);
+              setIsLoading(false);
+            });
+
+        } else {
+          // This is a new, non-invited user. Create their document from scratch.
+          const newUser: User = {
+            id: firebaseUser.uid,
+            name,
+            email,
+            avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+            role: 'Support', // Default role for any new signup
+          };
+          const newUserDocRef = doc(db, 'users', firebaseUser.uid);
+          
+          setDoc(newUserDocRef, newUser)
+            .then(() => {
+              toast({
+                title: 'Signup Successful',
+                description: `Welcome, ${name}!`,
+              });
+              setIsLoading(false);
+            })
+            .catch(serverError => {
+               const permissionError = new FirestorePermissionError({
+                  path: newUserDocRef.path,
+                  operation: 'create',
+                  requestResourceData: newUser,
+              });
+              errorEmitter.emit('permission-error', permissionError);
+              setIsLoading(false);
+          });
+        }
+      })
+      .catch((error) => {
+          let errorMessage = 'An unexpected error occurred during signup.';
+          if (error.code === 'auth/email-already-in-use') {
+            errorMessage = 'This email is already registered. Please log in.';
+          } else {
+            errorMessage = error.message || errorMessage;
+          }
+          toast({
+            variant: 'destructive',
+            title: 'Signup Failed',
+            description: errorMessage,
+          });
+          setIsLoading(false);
+      });
   }
 
 

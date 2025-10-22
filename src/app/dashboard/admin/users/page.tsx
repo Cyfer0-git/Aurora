@@ -73,7 +73,7 @@ const newUserSchema = z.object({
 });
 
 export default function ManageUsersPage() {
-  const { user: currentUser } = useUser();
+  const { user: currentUser, isLoading: isUserLoading } = useUser();
   const db = useFirestore();
   const [userList, setUserList] = useState<User[]>([]);
   const { toast } = useToast();
@@ -81,6 +81,10 @@ export default function ManageUsersPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (isUserLoading) {
+        setIsLoading(true);
+        return;
+    }
     if (!db || !currentUser || currentUser.role !== 'admin') {
       setIsLoading(false);
       setUserList([]);
@@ -105,7 +109,7 @@ export default function ManageUsersPage() {
         setIsLoading(false);
     });
     return () => unsubscribe();
-  }, [db, currentUser]);
+  }, [db, currentUser, isUserLoading]);
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),

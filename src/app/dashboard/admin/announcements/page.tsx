@@ -43,13 +43,17 @@ const announcementSchema = z.object({
 });
 
 export default function ManageAnnouncementsPage() {
-  const { user } = useUser();
+  const { user, isLoading: isUserLoading } = useUser();
   const db = useFirestore();
   const { toast } = useToast();
   const [allAnnouncements, setAllAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if(isUserLoading) {
+        setIsLoading(true);
+        return;
+    }
     if (!db) return;
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -66,9 +70,10 @@ export default function ManageAnnouncementsPage() {
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
+        setIsLoading(false);
     });
     return () => unsubscribe();
-  }, [db]);
+  }, [db, isUserLoading]);
 
   const form = useForm<z.infer<typeof announcementSchema>>({
     resolver: zodResolver(announcementSchema),

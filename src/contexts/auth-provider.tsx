@@ -9,7 +9,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -84,10 +84,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
+      // Check if a user with this email already exists in Firestore
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+
+      if (auth.currentUser && auth.currentUser.email === email) {
+         throw new Error("This user is already signed up and logged in.");
+      }
+
+      // If a user record exists but doesn't have an associated auth UID yet
+      if (!querySnapshot.empty) {
+        // We assume the first match is the one we want to update
+        const userDoc = querySnapshot.docs[0];
+
+        try {
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const { user: firebaseUser } = userCredential;
+          
+          // The user document in firestore was created without an ID that matches the auth user.
+          // We can't change the ID. The best approach is to create a new document with the correct ID
+          // and copy over the data.
+          const oldDocId = userDoc.id;
+          const userData = userDoc.data();
+          
+          // Create a new doc with the auth UID
+          await setDoc(doc(db, 'users', firebaseUser.uid), {
+            ...userData,
+            name, // Allow user to set their name on signup
+          });
+
+          // Optional: Delete the old document if you want to clean up.
+          // await deleteDoc(doc(db, 'users', oldDocId));
+          
+          toast({
+            title: 'Account Activated',
+            description: `Welcome, ${name}! Your account is now active.`,
+          });
+          router.push('/dashboard');
+          return;
+
+        } catch (authError: any) {
+           if (authError.code === 'auth/email-already-in-use') {
+             toast({
+              variant: 'destructive',
+              title: 'Account Already Active',
+              description: 'This email is already associated with an active account. Please log in.',
+            });
+           } else {
+             throw authError;
+           }
+           return;
+        }
+      }
+
+      // Standard signup for a brand new user
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const { user: firebaseUser } = userCredential;
 
-      // Assign 'admin' role if email matches, otherwise 'Support'
       const role = email.toLowerCase() === 'avay.gupta@auroramy.com' ? 'admin' : 'Support';
 
       const newUser: Omit<User, 'id'> = {
@@ -99,7 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
 
-      // We fetch the user from onAuthStateChanged, so no need to setUser here
       toast({
         title: 'Signup Successful',
         description: `Welcome, ${name}! Redirecting to your dashboard.`,
@@ -107,10 +160,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push('/dashboard');
 
     } catch (error: any) {
-      let errorMessage = 'An unexpected error occurred.';
+      let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'This email is already in use. Please log in.';
-      } else {
+        errorMessage = 'This email is already in use by an active account. Please log in.';
+      } else if (error.message){
         errorMessage = error.message;
       }
       toast({

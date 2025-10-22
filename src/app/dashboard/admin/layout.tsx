@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function AdminLayout({
@@ -15,19 +15,23 @@ export default function AdminLayout({
   const router = useRouter();
 
   useEffect(() => {
+    // If loading is finished and the user is NOT an admin, redirect them.
     if (!loading && user && user.role !== 'admin') {
-      // Redirect non-admin users away from admin pages
       router.push('/dashboard');
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
-    // AuthProvider already handles the main loading/redirect.
-    // This is a fallback while auth state is resolving.
-    return null;
+  // While loading, show a spinner to prevent any premature rendering or checks.
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
-  if (user.role !== 'admin') {
+  // After loading, if the user is still not an admin (or not logged in), show access denied.
+  if (!user || user.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-full">
         <Alert variant="destructive" className="max-w-md">
@@ -41,5 +45,6 @@ export default function AdminLayout({
     );
   }
 
+  // If the user is an admin, render the admin content.
   return <>{children}</>;
 }

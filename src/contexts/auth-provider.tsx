@@ -30,10 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const pathname = usePathname();
   const { toast } = useToast();
-
-  const publicRoutes = ['/', '/signup'];
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -43,27 +40,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDoc.exists()) {
           const userData = { id: firebaseUser.uid, ...userDoc.data() } as User;
           setUser(userData);
-          // If user is on a public page, redirect to dashboard
-          if(publicRoutes.includes(pathname)) {
-            router.push('/dashboard');
-          }
         } else {
-          // User exists in auth, but not firestore. Log them out to be safe.
-          await signOut(auth);
-          setUser(null);
+          // User exists in auth, but not firestore. Log them out.
+           await signOut(auth);
+           setUser(null);
         }
       } else {
         setUser(null);
-        // If user is on a protected page, redirect to login
-        if(!publicRoutes.includes(pathname)) {
-            router.push('/');
-        }
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [pathname, router]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
@@ -72,7 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: 'Login Successful',
           description: `Welcome back!`,
       });
-      // The onAuthStateChanged listener will handle the redirect.
+      // The onAuthStateChanged listener and page logic will handle the redirect.
+      router.push('/dashboard');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -101,7 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: 'Signup Successful',
         description: `Welcome, ${name}! Redirecting to your dashboard.`,
       });
-      // The onAuthStateChanged listener will handle the redirect.
+       // The onAuthStateChanged listener and page logic will handle the redirect.
+       router.push('/dashboard');
     } catch (error: any) {
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
@@ -123,27 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const logout = async () => {
     await signOut(auth);
-    // The onAuthStateChanged listener will handle the redirect.
+    router.push('/');
   };
-
-  // While loading, or if unauthenticated on a protected route, show a loader.
-  if (loading || (!user && !publicRoutes.includes(pathname))) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-  
-  // If authenticated on a public route, show a loader while redirecting.
-  if (user && publicRoutes.includes(pathname)) {
-      return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
 
   return (
     <AuthContext.Provider value={{ user, loading, logout, login, signup }}>

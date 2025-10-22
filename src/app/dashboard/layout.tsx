@@ -4,6 +4,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { MainSidebar } from '@/components/main-sidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function DashboardLayout({
   children,
@@ -11,9 +13,18 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, loading } = useAuth();
+  const router = useRouter();
 
-  // The AuthProvider now handles all loading states and redirects.
-  // We just need to check if the user object is available to render the layout.
+  useEffect(() => {
+    // If loading is finished and there's no user, redirect to login.
+    if (!loading && !user) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+
+  // While loading, or if there's no user yet, show a loader.
+  // This prevents a flash of the dashboard content before the redirect happens.
   if (loading || !user) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -22,6 +33,7 @@ export default function DashboardLayout({
     );
   }
 
+  // If we have a user, render the main dashboard layout.
   return (
     <SidebarProvider>
       <div className="flex">

@@ -8,6 +8,7 @@ import {
   signOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  User as FirebaseAuthUser,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc, writeBatch } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
@@ -63,15 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
-      if (userDoc.exists()) {
-        toast({
+      await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle setting the user and redirecting
+      toast({
           title: 'Login Successful',
-          description: `Welcome back, ${userDoc.data().name}!`,
-        });
-        router.push('/dashboard');
-      }
+          description: `Welcome back!`,
+      });
+      router.push('/dashboard');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -84,60 +83,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
+      // 1. Check if an admin has already created a placeholder for this email
       const usersRef = collection(db, "users");
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
+      const existingUserDoc = querySnapshot.docs[0];
 
-      if (auth.currentUser && auth.currentUser.email === email) {
-         throw new Error("This user is already signed up and logged in.");
-      }
-
-      // If a user record, created by an admin, already exists
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        if (userDoc.data().id) {
-           toast({
-              variant: 'destructive',
-              title: 'Account Already Active',
-              description: 'This email is already associated with an active account. Please log in.',
-            });
-            return;
-        }
-
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const { user: firebaseUser } = userCredential;
-
-        // The user document in firestore was created without an ID that matches the auth user.
-        // We now update the existing document with the correct ID.
-        await updateDoc(doc(db, 'users', userDoc.id), {
-          id: firebaseUser.uid,
-          name, // Allow user to set their name on signup
-        });
-
+      if (existingUserDoc && existingUserDoc.data().id) {
+        // A user document exists and it already has an ID, meaning the account is active.
         toast({
-          title: 'Account Activated',
-          description: `Welcome, ${name}! Your account is now active.`,
+          variant: "destructive",
+          title: "Signup Failed",
+          description: "This email is already associated with an active account. Please log in.",
         });
-        router.push('/dashboard');
         return;
       }
 
-      // Standard signup for a brand new user
+      // 2. Create the user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const { user: firebaseUser } = userCredential;
+      const firebaseUser = userCredential.user;
+
+      if (existingUserDoc) {
+        // 3. A placeholder document exists. Update it with the new Auth UID.
+        const userDocRef = doc(db, 'users', existingUserDoc.id);
+        await updateDoc(userDocRef, {
+          id: firebaseUser.uid,
+          name: name, // Allow user to set their name
+        });
+      } else {
+        // 4. No placeholder exists. Create a brand new user document.
+        const newUser: User = {
+          id: firebaseUser.uid,
+          name,
+          email,
+          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+          role: 'Support', // Default role for new signups
+        };
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+      }
       
-      const role = 'Support'; // Default role for new signups
-
-      const newUser: User = {
-        id: firebaseUser.uid,
-        name,
-        email,
-        avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-        role,
-      };
-
-      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-
       toast({
         title: 'Signup Successful',
         description: `Welcome, ${name}! Redirecting to your dashboard.`,
@@ -147,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'This email is already in use by an active account. Please log in.';
+        errorMessage = 'This email is already registered. Please log in.';
       } else if (error.message){
         errorMessage = error.message;
       }

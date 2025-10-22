@@ -21,12 +21,18 @@ export default function DashboardLayout({
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (!user) {
+    // This will be briefly rendered before the useEffect above redirects.
+    // It prevents a flash of the dashboard content for logged-out users.
+    return null;
   }
 
   return (

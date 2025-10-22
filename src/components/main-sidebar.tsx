@@ -36,7 +36,6 @@ const menuItems = [
 ];
 
 const adminMenuItems = [
-  { href: '/dashboard/admin', label: 'Admin Overview', icon: Shield },
   { href: '/dashboard/admin/users', label: 'Manage Users', icon: Users },
   {
     href: '/dashboard/admin/tasks',
@@ -124,7 +123,7 @@ export function MainSidebar() {
                     <SidebarMenuButton
                       isActive={
                         item.href === '/dashboard/admin'
-                          ? pathname === item.href
+                          ? pathname === item.href || pathname.startsWith('/dashboard/admin/')
                           : pathname.startsWith(item.href)
                       }
                       className="justify-start"

@@ -1,6 +1,6 @@
 'use client';
 import { onAuthStateChanged, type User as FirebaseAuthUser } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 import * as React from 'react';
 import { useAuth, useFirestore } from '..';
 import type { User } from '@/lib/definitions';
@@ -34,11 +34,17 @@ export function useUser() {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
 
+            // This is the critical data consistency check.
+            // If the `id` field in the document doesn't match the auth UID, update it.
+            if (userData.id !== authUser.uid) {
+               setDoc(userDocRef, { id: authUser.uid }, { merge: true });
+            }
+
             // Check if the current user is the designated admin but doesn't have the admin role yet.
             if (authUser.email === ADMIN_EMAIL && userData.role !== 'admin') {
               // This is the admin user, but their role is incorrect in Firestore.
               // We will update it for them.
-              const updatedAdminData = { ...userData, role: 'admin' as const };
+              const updatedAdminData = { ...userData, role: 'admin' as const, id: authUser.uid };
               setDoc(userDocRef, updatedAdminData, { merge: true })
                 .then(() => {
                    setUser({
@@ -63,6 +69,7 @@ export function useUser() {
               setUser({
                 ...userData,
                 uid: authUser.uid,
+                id: authUser.uid, // Ensure id is consistent
                 email: authUser.email || userData.email, 
               });
               setIsLoading(false);
@@ -76,8 +83,8 @@ export function useUser() {
                 email: authUser.email!,
                 name: authUser.displayName || "New User",
                 role: newUserRole,
-                id: authUser.uid,
-                avatarUrl: '',
+                id: authUser.uid, // Critically, set the id to the auth uid on creation
+                avatarUrl: `https://picsum.photos/seed/${authUser.uid}/40/40`,
              };
              // Create the document for the new user.
              setDoc(userDocRef, newUser).then(() => {

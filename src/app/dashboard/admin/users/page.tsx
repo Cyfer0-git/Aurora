@@ -7,14 +7,6 @@ import {
   CardContent,
 } from '@/components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -81,14 +73,9 @@ export default function ManageUsersPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (isUserLoading) {
+    if (isUserLoading || !db || !currentUser || currentUser.role !== 'admin') {
         setIsLoading(true);
         return;
-    }
-    if (!db || !currentUser || currentUser.role !== 'admin') {
-      setIsLoading(false);
-      setUserList([]);
-      return;
     }
 
     const q = collection(db, 'users');

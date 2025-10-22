@@ -50,14 +50,11 @@ export default function ManageAnnouncementsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if(isUserLoading) {
+    if(isUserLoading || !db || !user || user.role !== 'admin') {
         setIsLoading(true);
         return;
     }
-    if (!db || !user || user.role !== 'admin') {
-        setIsLoading(false);
-        return;
-    }
+    
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const announcements: Announcement[] = [];

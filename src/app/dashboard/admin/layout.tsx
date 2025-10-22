@@ -38,7 +38,7 @@ export default function AdminLayout({
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>Access Denied</AlertTitle>
           <AlertDescription>
-            You do not have permission to view this page. Redirecting...
+            You do not have permission to view this page. This could be a temporary issue if you have just logged in. Please wait a moment.
           </AlertDescription>
         </Alert>
       </div>

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -32,7 +32,6 @@ import {
   setDoc,
   doc,
 } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
 import type { User } from '@/lib/definitions';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';

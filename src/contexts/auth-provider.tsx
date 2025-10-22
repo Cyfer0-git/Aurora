@@ -9,7 +9,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc, writeBatch } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -84,7 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      // Check if a user with this email already exists in Firestore
       const usersRef = collection(db, "users");
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
@@ -93,58 +92,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          throw new Error("This user is already signed up and logged in.");
       }
 
-      // If a user record exists but doesn't have an associated auth UID yet
+      // If a user record, created by an admin, already exists
       if (!querySnapshot.empty) {
-        // We assume the first match is the one we want to update
         const userDoc = querySnapshot.docs[0];
-
-        try {
-          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-          const { user: firebaseUser } = userCredential;
-          
-          // The user document in firestore was created without an ID that matches the auth user.
-          // We can't change the ID. The best approach is to create a new document with the correct ID
-          // and copy over the data.
-          const oldDocId = userDoc.id;
-          const userData = userDoc.data();
-          
-          // Create a new doc with the auth UID
-          await setDoc(doc(db, 'users', firebaseUser.uid), {
-            ...userData,
-            name, // Allow user to set their name on signup
-          });
-
-          // Optional: Delete the old document if you want to clean up.
-          // await deleteDoc(doc(db, 'users', oldDocId));
-          
-          toast({
-            title: 'Account Activated',
-            description: `Welcome, ${name}! Your account is now active.`,
-          });
-          router.push('/dashboard');
-          return;
-
-        } catch (authError: any) {
-           if (authError.code === 'auth/email-already-in-use') {
-             toast({
+        if (userDoc.data().id) {
+           toast({
               variant: 'destructive',
               title: 'Account Already Active',
               description: 'This email is already associated with an active account. Please log in.',
             });
-           } else {
-             throw authError;
-           }
-           return;
+            return;
         }
+
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const { user: firebaseUser } = userCredential;
+
+        // The user document in firestore was created without an ID that matches the auth user.
+        // We now update the existing document with the correct ID.
+        await updateDoc(doc(db, 'users', userDoc.id), {
+          id: firebaseUser.uid,
+          name, // Allow user to set their name on signup
+        });
+
+        toast({
+          title: 'Account Activated',
+          description: `Welcome, ${name}! Your account is now active.`,
+        });
+        router.push('/dashboard');
+        return;
       }
 
       // Standard signup for a brand new user
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const { user: firebaseUser } = userCredential;
+      
+      const role = 'Support'; // Default role for new signups
 
-      const role = email.toLowerCase() === 'avay.gupta@auroramy.com' ? 'admin' : 'Support';
-
-      const newUser: Omit<User, 'id'> = {
+      const newUser: User = {
+        id: firebaseUser.uid,
         name,
         email,
         avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,

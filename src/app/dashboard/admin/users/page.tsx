@@ -136,6 +136,8 @@ export default function ManageUsersPage() {
     }
 
     try {
+      // The `id` field will be intentionally left blank. The user will set it
+      // when they complete their signup.
       await addDoc(collection(db, 'users'), {
         name: values.name,
         email: values.email,
@@ -144,8 +146,8 @@ export default function ManageUsersPage() {
       });
 
       toast({
-        title: 'User Created',
-        description: `${values.name} has been added to the team.`,
+        title: 'User Invited',
+        description: `${values.name} has been added. They will need to sign up to create their password.`,
       });
       form.reset();
       setIsDialogOpen(false);

@@ -15,16 +15,9 @@ export default function DashboardLayout({
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    // If loading is finished and there's no user, redirect to login.
-    if (!loading && !user) {
-      router.push('/');
-    }
-  }, [user, loading, router]);
-
-
-  // While loading, or if there's no user yet, show a loader.
-  // This prevents a flash of the dashboard content before the redirect happens.
+  // While loading, or if there's no user yet (after loading is finished),
+  // show a full-screen loader. This prevents a flash of the dashboard or login page.
+  // The AuthProvider is responsible for redirection logic.
   if (loading || !user) {
     return (
       <div className="flex h-screen items-center justify-center">

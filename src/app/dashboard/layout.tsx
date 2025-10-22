@@ -15,11 +15,11 @@ export default function DashboardLayout({
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  // The loading state now correctly waits for both authentication and user data fetching.
-  // If we are loading, or if loading is done and there is still no user,
-  // we show the loader. The AuthProvider is responsible for the redirect logic
-  // if the user is truly not authenticated.
-  if (loading || !user) {
+  // This is the gatekeeper for the entire dashboard.
+  // It waits until the auth state is fully resolved (loading is false).
+  // If loading is finished and there's still no user, the AuthProvider's
+  // own useEffect will handle the redirect to the login page.
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -27,8 +27,20 @@ export default function DashboardLayout({
     );
   }
 
-  // Only if loading is complete AND we have a user object (with the role),
-  // do we render the main dashboard layout.
+  // If loading is complete and there is no user, it means the redirect
+  // from AuthProvider is about to happen. We can show a loader to avoid
+  // a flash of an empty screen.
+  if (!user) {
+     return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Only if loading is complete AND we have a user object, do we render
+  // the main dashboard layout. By this point, the user object is guaranteed
+  // to be complete, including the 'role' property.
   return (
     <SidebarProvider>
       <div className="flex">

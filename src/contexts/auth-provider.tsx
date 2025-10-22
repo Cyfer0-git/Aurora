@@ -18,6 +18,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  resolving: boolean; // Keep this for role-specific checks if needed elsewhere
   logout: () => void;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
@@ -28,12 +29,15 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resolving, setResolving] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+      setResolving(true);
       if (firebaseUser) {
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const userDoc = await getDoc(userDocRef);
@@ -41,12 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = { id: firebaseUser.uid, ...userDoc.data() } as User;
           setUser(userData);
         } else {
-          setUser(null);
-          await signOut(auth); // Log out if user doc doesn't exist
+          // This case should not happen for an existing user
+          setUser(null); 
+          await signOut(auth);
         }
       } else {
         setUser(null);
       }
+      setResolving(false);
       setLoading(false);
     });
 
@@ -54,15 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (loading) return; // Don't do anything while waiting for auth state
+    if (loading) return; 
 
     const isAuthPage = pathname === '/' || pathname === '/signup';
 
     if (!user && !isAuthPage) {
-      // If user is not logged in and not on an auth page, redirect to login
       router.push('/');
     } else if (user && isAuthPage) {
-      // If user is logged in and on an auth page, redirect to dashboard
       router.push('/dashboard');
     }
   }, [user, loading, pathname, router]);
@@ -74,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: 'Login Successful',
           description: `Welcome back!`,
       });
-      // The useEffect hook above will handle the redirection.
+      // The onAuthStateChanged listener and useEffect will handle redirection.
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -87,24 +91,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
+      // Check if a user document with this email already exists but has no ID
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where("email", "==", email));
+      const querySnapshot = await getDocs(q);
 
-      const newUser: User = {
-        id: firebaseUser.uid,
-        name,
-        email,
-        avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-        role: 'Support', // Default role for all new signups
-      };
-
-      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-      
-      toast({
-        title: 'Signup Successful',
-        description: `Welcome, ${name}!`,
+      let existingUserDoc: any = null;
+      querySnapshot.forEach((doc) => {
+        if (!doc.data().id) {
+          existingUserDoc = doc;
+        }
       });
-       // The onAuthStateChanged listener and useEffect will handle setting user and redirection.
+
+      if (existingUserDoc) {
+        // This is an invited user completing their signup.
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const firebaseUser = userCredential.user;
+        
+        // Update the existing document with the new UID
+        const userDocRef = doc(db, 'users', existingUserDoc.id);
+        await updateDoc(userDocRef, { 
+          id: firebaseUser.uid, 
+          name: name, // Allow them to set their name
+          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+        });
+
+        // Now, we need to delete the old placeholder document if it has a different ID,
+        // and create a new one. A simpler approach is to create a new doc with the UID
+        // and update it with existing data, then delete the old one if it's different.
+        // For simplicity here, we'll assume the invited user record can be updated.
+        // A more robust solution might involve a cloud function.
+        // The simplest path for now: let's re-write the doc with the new UID as the ID.
+        
+        const userData = {
+            ...existingUserDoc.data(),
+            id: firebaseUser.uid,
+            name: name,
+            email: email,
+            avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+        };
+
+        await setDoc(doc(db, 'users', firebaseUser.uid), userData);
+        if(existingUserDoc.id !== firebaseUser.uid){
+           await deleteDoc(doc(db, 'users', existingUserDoc.id));
+        }
+
+        toast({
+          title: 'Account Activated',
+          description: `Welcome, ${name}! Your account is now active.`,
+        });
+
+      } else {
+        // This is a brand new user, not an invited one.
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const firebaseUser = userCredential.user;
+
+        const newUser: User = {
+          id: firebaseUser.uid,
+          name,
+          email,
+          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+          role: 'Support', // Default role for all new signups
+        };
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+        toast({
+          title: 'Signup Successful',
+          description: `Welcome, ${name}!`,
+        });
+      }
     } catch (error: any) {
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
@@ -124,11 +178,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   
   const logout = async () => {
+    setUser(null);
     await signOut(auth);
-    // The useEffect hook will handle redirection to the login page.
+    router.push('/');
   };
 
-  const value = { user, loading, logout, login, signup };
+  const value = { user, loading, resolving, logout, login, signup };
 
   return (
     <AuthContext.Provider value={value}>

@@ -20,8 +20,11 @@ export default function ViewReportsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!db || isUserLoading || !currentUser) return;
-    if (currentUser.role !== 'admin') {
+    if (isUserLoading) {
+      setIsLoading(true);
+      return;
+    }
+    if (!db || !currentUser || currentUser.role !== 'admin') {
       setIsLoading(false);
       setSortedReports([]);
       setUsers([]);

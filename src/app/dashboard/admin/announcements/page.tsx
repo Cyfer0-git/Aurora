@@ -54,7 +54,10 @@ export default function ManageAnnouncementsPage() {
         setIsLoading(true);
         return;
     }
-    if (!db) return;
+    if (!db || !user || user.role !== 'admin') {
+        setIsLoading(false);
+        return;
+    }
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const announcements: Announcement[] = [];
@@ -73,7 +76,7 @@ export default function ManageAnnouncementsPage() {
         setIsLoading(false);
     });
     return () => unsubscribe();
-  }, [db, isUserLoading]);
+  }, [db, user, isUserLoading]);
 
   const form = useForm<z.infer<typeof announcementSchema>>({
     resolver: zodResolver(announcementSchema),

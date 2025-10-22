@@ -85,8 +85,11 @@ export default function ManageTasksPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!db || isUserLoading || !adminUser) return;
-    if(adminUser.role !== 'admin'){
+    if (isUserLoading) {
+      setIsLoading(true);
+      return;
+    }
+    if (!db || !adminUser || adminUser.role !== 'admin') {
       setIsLoading(false);
       setAllTasks([]);
       setUsers([]);

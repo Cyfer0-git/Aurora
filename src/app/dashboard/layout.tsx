@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { MainSidebar } from '@/components/main-sidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -13,26 +11,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, loading } = useAuth();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/');
-    }
-  }, [user, loading, router]);
-
-  if (loading) {
+  // The AuthProvider now handles all loading states and redirects.
+  // We just need to check if the user object is available to render the layout.
+  if (loading || !user) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  if (!user) {
-    // This will be briefly rendered before the useEffect above redirects.
-    // It prevents a flash of the dashboard content for logged-out users.
-    return null;
   }
 
   return (

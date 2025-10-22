@@ -10,14 +10,11 @@ import {
   signInWithEmailAndPassword,
   User as FirebaseAuthUser,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
-
 
 interface AuthContextType {
   user: User | null;
@@ -44,27 +41,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
-          setUser({ id: firebaseUser.uid, ...userDoc.data() } as User);
+          const userData = { id: firebaseUser.uid, ...userDoc.data() } as User;
+          setUser(userData);
+          // If user is on a public page, redirect to dashboard
+          if(publicRoutes.includes(pathname)) {
+            router.push('/dashboard');
+          }
         } else {
-          // If the user exists in Auth but not Firestore, they are partially created.
-          // We will attempt to create their Firestore record during signup.
-          // For now, treat them as logged out.
+          // User exists in auth, but not firestore. Log them out to be safe.
+          await signOut(auth);
           setUser(null);
         }
       } else {
         setUser(null);
+        // If user is on a protected page, redirect to login
+        if(!publicRoutes.includes(pathname)) {
+            router.push('/');
+        }
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!loading && !user && !publicRoutes.includes(pathname)) {
-      router.push('/');
-    }
-  }, [user, loading, pathname, router]);
+  }, [pathname, router]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -73,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: 'Login Successful',
           description: `Welcome back!`,
       });
-      router.push('/dashboard');
+      // The onAuthStateChanged listener will handle the redirect.
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -93,26 +92,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name,
         email,
         avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-        role: 'Support', // Default role for new signups
+        role: 'Support', // Default role
       };
 
-      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
       
-      await setDoc(userDocRef, newUser);
-
       toast({
         title: 'Signup Successful',
         description: `Welcome, ${name}! Redirecting to your dashboard.`,
       });
-      router.push('/dashboard');
-
+      // The onAuthStateChanged listener will handle the redirect.
     } catch (error: any) {
-      // This block now primarily handles Authentication errors
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';
-      } else if (error.code === 'auth/api-key-not-valid') {
-        errorMessage = 'The API key is invalid. Please contact support.'
+      } else if (error.code === 'auth/api-key-not-valid'){
+         errorMessage = 'The API key is invalid. Please contact support.'
       }
       else if (error.message){
         errorMessage = error.message;
@@ -125,24 +120,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Authentication or Firestore error:", error);
     }
   };
-
+  
   const logout = async () => {
     await signOut(auth);
-    setUser(null);
-    router.push('/');
+    // The onAuthStateChanged listener will handle the redirect.
   };
 
-  if (loading && !publicRoutes.includes(pathname)) {
+  // While loading, or if unauthenticated on a protected route, show a loader.
+  if (loading || (!user && !publicRoutes.includes(pathname))) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
-
-  if (!loading && !user && !publicRoutes.includes(pathname)) {
-    return null;
+  
+  // If authenticated on a public route, show a loader while redirecting.
+  if (user && publicRoutes.includes(pathname)) {
+      return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
+
 
   return (
     <AuthContext.Provider value={{ user, loading, logout, login, signup }}>

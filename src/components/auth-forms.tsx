@@ -122,20 +122,21 @@ export function AuthForm({ mode }: AuthFormProps) {
             name: name,
             avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
         };
-        await updateDoc(userDocRef, userDataToUpdate)
-        .catch(async (serverError) => {
+        
+        updateDoc(userDocRef, userDataToUpdate)
+          .then(() => {
+             toast({
+              title: 'Account Activated',
+              description: `Welcome, ${name}! Your account is now active.`,
+            });
+          })
+          .catch(async (serverError) => {
             const permissionError = new FirestorePermissionError({
                 path: userDocRef.path,
                 operation: 'update',
                 requestResourceData: userDataToUpdate,
             });
             errorEmitter.emit('permission-error', permissionError);
-            throw serverError; // Re-throw to stop execution and show toast
-        });
-
-        toast({
-          title: 'Account Activated',
-          description: `Welcome, ${name}! Your account is now active.`,
         });
 
       } else {
@@ -148,36 +149,38 @@ export function AuthForm({ mode }: AuthFormProps) {
           role: 'Support', // Default role for all new signups
         };
         const newUserDocRef = doc(db, 'users', firebaseUser.uid);
-        await setDoc(newUserDocRef, newUser)
-        .catch(async (serverError) => {
+        
+        setDoc(newUserDocRef, newUser)
+          .then(() => {
+            toast({
+              title: 'Signup Successful',
+              description: `Welcome, ${name}!`,
+            });
+          })
+          .catch(async (serverError) => {
              const permissionError = new FirestorePermissionError({
                 path: newUserDocRef.path,
                 operation: 'create',
                 requestResourceData: newUser,
             });
             errorEmitter.emit('permission-error', permissionError);
-            throw serverError;
-        });
-        toast({
-          title: 'Signup Successful',
-          description: `Welcome, ${name}!`,
         });
       }
     } catch (error: any) {
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';
-      } else if (error.name === 'FirestorePermissionError') {
-        errorMessage = 'You do not have permission to create an account.'
-      } else if (error.message){
-        errorMessage = error.message;
+      } else if (error.name !== 'FirestorePermissionError') { // Don't show generic toast for our custom error
+        errorMessage = error.message || errorMessage;
+         toast({
+          variant: 'destructive',
+          title: 'Signup Failed',
+          description: errorMessage,
+        });
       }
-      toast({
-        variant: 'destructive',
-        title: 'Signup Failed',
-        description: errorMessage,
-      });
-      console.error("Signup error:", error);
+       if (error.name !== 'FirestorePermissionError') {
+        console.error("Signup error:", error);
+      }
     } finally {
         setIsLoading(false);
     }

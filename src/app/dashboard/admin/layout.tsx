@@ -14,12 +14,19 @@ export default function AdminLayout({
   const { user, isLoading } = useUser();
   const router = useRouter();
 
+  // The parent DashboardLayout now handles the main loading state.
+  // This component's only job is to protect the admin routes *after* loading is complete.
+  
   useEffect(() => {
-    if (!isLoading && (!user || user.role !== 'admin')) {
+    if (!isLoading && user?.role !== 'admin') {
+      // If loading is done and user is not an admin, redirect.
       router.push('/dashboard');
     }
   }, [user, isLoading, router]);
 
+  // While the parent is loading, this component's isLoading will also be true.
+  // The parent will show a spinner, so this component doesn't need to.
+  // But if we get here and it's still loading for some reason, we can show a spinner.
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -28,19 +35,21 @@ export default function AdminLayout({
     );
   }
 
-  if (!user || user.role !== 'admin') {
+  // If loading is done and the user is not an admin (or not a user at all).
+  if (user?.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-full">
         <Alert variant="destructive" className="max-w-md">
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>Access Denied</AlertTitle>
           <AlertDescription>
-            You do not have permission to view this page. Redirecting...
+            You do not have permission to view this page.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
   
+  // If loading is done and user is an admin, show the content.
   return <>{children}</>;
 }

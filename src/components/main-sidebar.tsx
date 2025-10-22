@@ -77,6 +77,10 @@ export function MainSidebar() {
     }
     return names[0].substring(0, 2);
   };
+  
+  if (!user) {
+    return null; // Don't render sidebar if user is not loaded
+  }
 
   return (
     <Sidebar>

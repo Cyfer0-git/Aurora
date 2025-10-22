@@ -19,7 +19,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  resolving: boolean; // New state to track Firestore data fetching
+  resolving: boolean;
   logout: () => void;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
@@ -30,7 +30,7 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [resolving, setResolving] = useState(true); // Initialize as true
+  const [resolving, setResolving] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -45,15 +45,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = { id: firebaseUser.uid, ...userDoc.data() } as User;
           setUser(userData);
         } else {
-          // User authenticated but no data in Firestore, maybe a deleted user trying to log back in.
-          await signOut(auth);
+          // This case can happen if the user doc creation fails after signup.
+          // Or if an admin deleted the user from Firestore but not from Auth.
           setUser(null);
+          await signOut(auth);
         }
       } else {
         setUser(null);
       }
       setLoading(false);
-      setResolving(false); // Finished resolving
+      setResolving(false);
     });
 
     return () => unsubscribe();
@@ -66,8 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: 'Login Successful',
           description: `Welcome back!`,
       });
-      // The onAuthStateChanged listener will handle setting user state.
-      // The page logic will handle the redirect.
+      router.push('/dashboard');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -80,55 +80,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
+      // First, create the user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-      if (!querySnapshot.empty) {
-        // User document exists, likely created by an admin
-        const userDoc = querySnapshot.docs[0];
-        if (userDoc.data().id) {
-          // The user already signed up and has a UID.
-          toast({ variant: "destructive", title: "Signup Failed", description: "This email is already registered. Please log in." });
-          return;
-        }
+      // Now, create the user document in Firestore with the UID from authentication
+      const newUser: User = {
+        id: firebaseUser.uid,
+        name,
+        email,
+        avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+        role: 'Support', // Default role for all new signups
+      };
 
-        // Create auth user
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const firebaseUser = userCredential.user;
-
-        // Update existing document with the new UID
-        await updateDoc(doc(db, "users", userDoc.id), { id: firebaseUser.uid });
-        toast({ title: 'Account Activated', description: `Welcome, ${name}! Your account is now active.` });
-
-      } else {
-        // Standard new user signup
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const firebaseUser = userCredential.user;
-
-        const newUser: User = {
-          id: firebaseUser.uid,
-          name,
-          email,
-          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-          role: 'Support', // Default role
-        };
-
-        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-        
-        toast({
-          title: 'Signup Successful',
-          description: `Welcome, ${name}! Redirecting to your dashboard.`,
-        });
-      }
+      // Use the user's UID as the document ID
+      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+      
+      toast({
+        title: 'Signup Successful',
+        description: `Welcome, ${name}! Redirecting to your dashboard.`,
+      });
+      // The onAuthStateChanged listener will handle setting user state and redirection
     } catch (error: any) {
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';
       } else if (error.code === 'auth/api-key-not-valid') {
-         errorMessage = 'The API key is invalid. Please contact support.'
-      }
-      else if (error.message){
+         errorMessage = 'The API key is invalid. Please check your Firebase configuration.'
+      } else if (error.message){
         errorMessage = error.message;
       }
       toast({
@@ -136,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: 'Signup Failed',
         description: errorMessage,
       });
-      console.error("Authentication or Firestore error:", error);
+      console.error("Signup error:", error);
     }
   };
   

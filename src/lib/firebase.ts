@@ -4,13 +4,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC2qjA7a4XmO_p5x_ngg9aE_u9R6ayokkk",
-  authDomain: "aurora-42145.firebaseapp.com",
-  projectId: "aurora-42145",
-  storageBucket: "aurora-42145.appspot.com",
-  messagingSenderId: "518332560249",
-  appId: "1:518332560249:web:9e3b2e5a703a5578338f03",
-  measurementId: "G-D1T4X7S98G"
+  apiKey: "AIzaSyB-gN_ucwTz_3_u0i4I1TjT1b-v7bJvM-s",
+  authDomain: "aurora-426814.firebaseapp.com",
+  projectId: "aurora-426814",
+  storageBucket: "aurora-426814.appspot.com",
+  messagingSenderId: "1083442122687",
+  appId: "1:1083442122687:web:86f6d61a35791c2b53c729",
+  measurementId: "G-F385EH8J6H"
 };
 
 // Initialize Firebase

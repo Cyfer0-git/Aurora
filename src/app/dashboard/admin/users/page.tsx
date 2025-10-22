@@ -91,6 +91,13 @@ export default function ManageUsersPage() {
       });
       setUserList(users);
       setIsLoading(false);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'users',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
     return () => unsubscribe();
   }, [db]);

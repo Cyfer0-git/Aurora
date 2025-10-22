@@ -13,6 +13,8 @@ import { useState, useEffect } from 'react';
 import type { Announcement } from '@/lib/definitions';
 import { useFirestore } from '@/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 
 export default function AnnouncementsPage() {
@@ -30,6 +32,13 @@ export default function AnnouncementsPage() {
       });
       setSortedAnnouncements(announcementsData);
       setIsLoading(false);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'announcements',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
     return () => unsubscribe();
   }, [db]);

@@ -59,6 +59,13 @@ export default function ManageAnnouncementsPage() {
       });
       setAllAnnouncements(announcements);
       setIsLoading(false);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'announcements',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
     return () => unsubscribe();
   }, [db]);

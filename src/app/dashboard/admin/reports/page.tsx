@@ -7,6 +7,8 @@ import { useState, useEffect, useRef } from 'react';
 import type { Report, User } from '@/lib/definitions';
 import { useFirestore } from '@/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function ViewReportsPage() {
   const db = useFirestore();
@@ -29,6 +31,13 @@ export default function ViewReportsPage() {
       if (usersLoaded.current) {
         setIsLoading(false);
       }
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'reports',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     const usersQuery = collection(db, 'users');
@@ -39,6 +48,13 @@ export default function ViewReportsPage() {
       if (reportsLoaded.current) {
         setIsLoading(false);
       }
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'users',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     return () => {

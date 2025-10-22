@@ -137,6 +137,13 @@ export default function TasksPage() {
       if (usersLoaded.current) {
         setIsLoading(false);
       }
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'tasks',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     const usersQuery = collection(db, 'users');
@@ -147,6 +154,13 @@ export default function TasksPage() {
       if (tasksLoaded.current) {
         setIsLoading(false);
       }
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'users',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     return () => {

@@ -22,6 +22,8 @@ import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
 import type { Task, Announcement } from '@/lib/definitions';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 function BreakTimer() {
   const [isOnBreak, setIsOnBreak] = useState(false);
@@ -116,11 +118,25 @@ export default function DashboardPage() {
       const allTasks = snapshot.docs.map(doc => ({id: doc.id, ...doc.data() } as Task));
       const activeTasks = allTasks.filter(task => task.status !== 'Done');
       setUserTasks(activeTasks);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'tasks',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     const announcementsQuery = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(2));
     const announcementsUnsubscribe = onSnapshot(announcementsQuery, (snapshot) => {
       setRecentAnnouncements(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Announcement)));
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'announcements',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     return () => {

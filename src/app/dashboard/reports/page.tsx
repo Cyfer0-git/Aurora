@@ -92,6 +92,13 @@ export default function ReportsPage() {
       });
       setUserReports(reportsData);
       setIsLoading(false);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'reports',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
     return () => unsubscribe();
   }, [user, db]);

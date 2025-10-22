@@ -99,8 +99,6 @@ export function AuthForm({ mode }: AuthFormProps) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
-      // Now that the user is created, try to write to Firestore.
-      // This is where the permission error is likely happening.
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
@@ -166,7 +164,6 @@ export function AuthForm({ mode }: AuthFormProps) {
           });
       }
     } catch (error: any) {
-      // This catch block is now only for authentication errors.
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';

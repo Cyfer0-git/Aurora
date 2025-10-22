@@ -10,8 +10,6 @@ import { FirestorePermissionError } from '@/firebase/errors';
 // Combine Firebase Auth user with Firestore user data
 type UserData = User & { uid: string };
 
-const ADMIN_EMAIL = 'avay.gupta@auroramy.com';
-
 export function useUser() {
   const auth = useAuth();
   const firestore = useFirestore();
@@ -21,12 +19,14 @@ export function useUser() {
 
   React.useEffect(() => {
     if (!auth || !firestore) {
-      // Firebase is not initialized yet.
+      // Firebase is not initialized yet, wait for it.
+      // Setting isLoading to true ensures dependent components also wait.
+      setIsLoading(true);
       return;
     }
     
     // Listen for changes in authentication state (login/logout).
-    const unsubscribeFromAuth = onAuthStateChanged(auth, async (authUser) => {
+    const unsubscribeFromAuth = onAuthStateChanged(auth, (authUser) => {
       if (authUser) {
         // If a user is logged in, listen for changes to their document in Firestore.
         const userDocRef = doc(firestore, `users/${authUser.uid}`);
@@ -38,23 +38,26 @@ export function useUser() {
             setUser({
               ...userData,
               uid: authUser.uid,
-              id: authUser.uid,
+              id: userDoc.id, // Use the document id
               email: authUser.email || userData.email, 
             });
           } else {
-            // This case might happen briefly on first sign-up before the doc is created.
-            // We set isLoading to false, but the user object might be incomplete.
-            // The signup logic in auth-forms.tsx is responsible for creating the doc.
+            // This can happen on first signup before the doc is created.
+            // The user is authenticated but doesn't have a profile yet.
+            // Set user to null and let other parts of the app handle profile creation.
             setUser(null);
           }
+          // We are done loading once we have a definitive answer about the user doc.
           setIsLoading(false);
         }, (err) => {
             console.error("Error fetching user document:", err);
+            // This could be a permission error if rules are wrong.
             setError(err);
+            setUser(null);
             setIsLoading(false);
         });
 
-        return unsubscribeFromUserDoc; // This will be called on cleanup.
+        return unsubscribeFromUserDoc;
 
       } else {
         // If no user is logged in, clear user data and stop loading.
@@ -65,6 +68,7 @@ export function useUser() {
         // Handle any errors with the auth state listener itself.
         console.error("Error in onAuthStateChanged:", err);
         setError(err);
+        setUser(null);
         setIsLoading(false);
     });
 

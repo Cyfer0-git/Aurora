@@ -1,116 +1,111 @@
 /**
- * @file Firebase Security Rules for Firestore.
- *
- * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for user profiles and reports,
- * and allows public read access with owner-only writes for announcements. Tasks are not directly secured
- * with rules due to missing ownership information, requiring future schema updates.
+ * @file Firestore Security Rules
+ * @description This ruleset enforces a role-based access control model with user-specific data isolation.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profile data, accessible only by the user themselves.
- * - /tasks/{taskId}: Stores task data. Currently has a TODO placeholder rule because it lacks an explicit owner field.
- * - /announcements/{announcementId}: Stores announcements, publicly readable but writable only by the author.
- * - /reports/{reportId}: Stores user reports, accessible only by the user who created them.
+ * - /users/{userId}: Stores user profile information. Only the user and admins can read/write.
+ * - /tasks/{taskId}: Stores tasks. Anyone can read, but only assigned user can modify the task.
+ * - /announcements/{announcementId}: Stores company announcements. Anyone can read, but only authors can modify the task.
+ * - /reports/{reportId}: Stores daily user reports. Only the user and admins can read/write.
  *
  * Key Security Decisions:
- * - User listing is disallowed to protect user privacy.
- * - Announcements are publicly readable, but only the author can modify them.
- * - The absence of an ownership field on the Task entity requires a placeholder rule and future schema update for proper security.
+ * - User listing is disabled to protect user privacy.
+ * - Data validation is relaxed for rapid prototyping but MUST be tightened in production.
+ * - Role-based access control is implemented using the `role` field on the `/users/{userId}` document.
+ * - All write operations require authentication.
  *
  * Denormalization for Authorization:
- * - Announcements: The `authorId` field on the `Announcement` entity is used to control write access, avoiding the need for complex lookups.
+ * - Tasks and Announcements store the user ID of the assignee/author directly in the document to avoid needing a `get()` call to the `/users/{userId}` document for authorization.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Enforces user-ownership for user profiles.
+     * @description Grants access to user profiles based on role and ownership.
      * @path /users/{userId}
-     * @allow (create) - User 'abc' can create their profile if authenticated as 'abc'.
-     * @allow (get, update, delete) - User 'abc' can access/modify their profile if authenticated as 'abc'.
-     * @deny (create) - User 'def' cannot create a profile for user 'abc'.
-     * @deny (get, update, delete) - User 'def' cannot access/modify user 'abc's profile.
-     * @principle Enforces document ownership for writes, restricts access to a user's own data tree.
+     * @allow (read, write) if the user is the owner of the profile or an admin.
+     * @deny (read, write) if the user is not the owner and not an admin.
+     * @principle Enforces document ownership for writes and role-based access.
      */
     match /users/{userId} {
-      // Helper function to check if the user is signed in
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      // Helper function to check if the authenticated user is the owner of the document.
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if false; // Disallowing listing for privacy
-
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if false;
       allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isOwner(userId);
-      allow delete: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isSignedIn() && isAdmin();
     }
 
     /**
-     * @description Controls access to tasks. Currently, no rules are implemented due to missing ownership data.
+     * @description Grants access to tasks.
      * @path /tasks/{taskId}
-     * @allow (get, list): if true;
-     * @deny (create, update, delete): if false; // TODO: Add owner validation once the schema is updated with an ownership field.
-     * @principle Placeholder rule due to missing ownership field.
+     * @allow (read) to everyone.
+     * @allow (create) to signed in user
+     * @allow (update, delete) to the user assigned to the task.
+     * @deny (update, delete) to others.
+     * @principle Enforces document ownership for writes.
      */
     match /tasks/{taskId} {
       allow get, list: if true;
-      allow create, update, delete: if false; // TODO: Add owner validation once the schema is updated with an ownership field.
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isAssignedTo(resource.data.assignedTo);
+      allow delete: if isSignedIn() && isAssignedTo(resource.data.assignedTo);
     }
 
     /**
-     * @description Allows public read access to announcements, but restricts write access to the author.
+     * @description Grants access to announcements.
      * @path /announcements/{announcementId}
-     * @allow (get, list): if true;
-     * @allow (create) - User 'abc' can create an announcement if request.auth.uid == request.resource.data.authorId.
-     * @allow (update, delete) - User 'abc' can update/delete an announcement if they are the author (resource.data.authorId == request.auth.uid).
-     * @deny (create) - User 'def' cannot create an announcement with authorId 'abc'.
-     * @deny (update, delete) - User 'def' cannot update/delete an announcement authored by 'abc'.
-     * @principle Public read, owner-only writes.
+     * @allow (read) to everyone.
+     * @allow (create) to signed in user
+     * @allow (update, delete) to the author of the announcement.
+     * @deny (update, delete) to others.
+     * @principle Enforces document ownership for writes.
      */
     match /announcements/{announcementId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-      function isOwner(authorId) {
-        return request.auth.uid == authorId;
-      }
-
       allow get, list: if true;
-      allow create: if isSignedIn() && isOwner(request.resource.data.authorId);
-      allow update: if isSignedIn() && isOwner(resource.data.authorId);
-      allow delete: if isSignedIn() && isOwner(resource.data.authorId);
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isAuthor(resource.data.authorId);
+      allow delete: if isSignedIn() && isAuthor(resource.data.authorId);
     }
 
     /**
-     * @description Enforces user-ownership for user reports.
+     * @description Grants access to reports based on role and ownership.
      * @path /reports/{reportId}
-     * @allow (create) - User 'abc' can create a report if request.auth.uid == request.resource.data.userId.
-     * @allow (get, update, delete) - User 'abc' can access/modify their report if request.auth.uid == resource.data.userId.
-     * @deny (create) - User 'def' cannot create a report for user 'abc'.
-     * @deny (get, update, delete) - User 'def' cannot access/modify user 'abc's report.
-     * @principle Enforces document ownership for reports.
+     * @allow (read, write) if the user is the owner of the report or an admin.
+     * @deny (read, write) if the user is not the owner and not an admin.
+     * @principle Enforces document ownership for writes and role-based access.
      */
     match /reports/{reportId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
+      allow get: if isSignedIn() && (isOwnerReport(resource.data.userId) || isAdmin());
+      allow list: if isSignedIn() && (isOwnerReport(resource.data.userId) || isAdmin());
+      allow create: if isSignedIn() && isOwnerReport(request.resource.data.userId);
+      allow update: if isSignedIn() && (isOwnerReport(resource.data.userId) || isAdmin());
+      allow delete: if isSignedIn() && isAdmin();
+    }
 
-      allow get: if isSignedIn() && isOwner(resource.data.userId);
-      allow list: if false;
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
 
-      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
-      allow update: if isSignedIn() && isOwner(resource.data.userId);
-      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isOwnerReport(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isAssignedTo(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isAuthor(authorId) {
+      return request.auth.uid == authorId;
+    }
+
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
   }
 }

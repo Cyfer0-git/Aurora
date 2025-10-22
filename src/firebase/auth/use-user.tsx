@@ -21,98 +21,55 @@ export function useUser() {
 
   React.useEffect(() => {
     if (!auth || !firestore) {
+      // Firebase is not initialized yet.
       return;
     }
     
-    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
+    // Listen for changes in authentication state (login/logout).
+    const unsubscribeFromAuth = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
-        // THIS IS THE CRITICAL CHANGE: Force a refresh of the ID token.
-        // This ensures that any custom claims (like `admin: true`) are included
-        // in the token that Firestore Security Rules will evaluate.
-        authUser.getIdToken(true);
-
+        // If a user is logged in, listen for changes to their document in Firestore.
         const userDocRef = doc(firestore, `users/${authUser.uid}`);
         
-        const unsubFromUser = onSnapshot(userDocRef, (userDoc) => {
+        const unsubscribeFromUserDoc = onSnapshot(userDocRef, (userDoc) => {
           if (userDoc.exists()) {
+            // If the user document exists, combine it with the auth data.
             const userData = userDoc.data() as User;
-
-            if (userData.id !== authUser.uid) {
-               setDoc(userDocRef, { id: authUser.uid }, { merge: true });
-            }
-
-            if (authUser.email === ADMIN_EMAIL && userData.role !== 'admin') {
-              const updatedAdminData = { ...userData, role: 'admin' as const, id: authUser.uid };
-              setDoc(userDocRef, updatedAdminData, { merge: true })
-                .then(() => {
-                   setUser({
-                      ...updatedAdminData,
-                      uid: authUser.uid,
-                      email: authUser.email || updatedAdminData.email,
-                    });
-                })
-                .catch(serverError => {
-                    const permissionError = new FirestorePermissionError({
-                        path: userDocRef.path,
-                        operation: 'update',
-                        requestResourceData: { role: 'admin' },
-                    });
-                    errorEmitter.emit('permission-error', permissionError);
-                }).finally(() => {
-                    setIsLoading(false);
-                });
-
-            } else {
-              setUser({
-                ...userData,
-                uid: authUser.uid,
-                id: authUser.uid,
-                email: authUser.email || userData.email, 
-              });
-              setIsLoading(false);
-            }
+            setUser({
+              ...userData,
+              uid: authUser.uid,
+              id: authUser.uid,
+              email: authUser.email || userData.email, 
+            });
           } else {
-             const newUserRole = authUser.email === ADMIN_EMAIL ? 'admin' : 'Support';
-             const newUser: User = {
-                uid: authUser.uid,
-                email: authUser.email!,
-                name: authUser.displayName || "New User",
-                role: newUserRole,
-                id: authUser.uid,
-                avatarUrl: `https://picsum.photos/seed/${authUser.uid}/40/40`,
-             };
-             setDoc(userDocRef, newUser).then(() => {
-                setUser(newUser);
-             }).catch(serverError => {
-                const permissionError = new FirestorePermissionError({
-                    path: userDocRef.path,
-                    operation: 'create',
-                    requestResourceData: newUser,
-                });
-                errorEmitter.emit('permission-error', permissionError);
-             }).finally(() => {
-                setIsLoading(false);
-             })
+            // This case might happen briefly on first sign-up before the doc is created.
+            // We set isLoading to false, but the user object might be incomplete.
+            // The signup logic in auth-forms.tsx is responsible for creating the doc.
+            setUser(null);
           }
+          setIsLoading(false);
         }, (err) => {
             console.error("Error fetching user document:", err);
             setError(err);
             setIsLoading(false);
         });
 
-        return unsubFromUser;
+        return unsubscribeFromUserDoc; // This will be called on cleanup.
 
       } else {
+        // If no user is logged in, clear user data and stop loading.
         setUser(null);
         setIsLoading(false);
       }
     }, (err) => {
+        // Handle any errors with the auth state listener itself.
         console.error("Error in onAuthStateChanged:", err);
         setError(err);
         setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    // Cleanup function for the useEffect hook.
+    return () => unsubscribeFromAuth();
   }, [auth, firestore]);
 
   return { user, isLoading, error };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@/hooks/use-auth';
+import { useUser } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { ShieldAlert, Loader2 } from 'lucide-react';
@@ -11,18 +11,16 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, resolving } = useAuth(); // Use the new resolving state
+  const { user, isLoading } = useUser();
   const router = useRouter();
 
   useEffect(() => {
-    // If resolution is complete and the user is either not present or not an admin, redirect.
-    if (!resolving && (!user || user.role !== 'admin')) {
+    if (!isLoading && (!user || user.role !== 'admin')) {
       router.push('/dashboard');
     }
-  }, [user, resolving, router]);
+  }, [user, isLoading, router]);
 
-  // While resolving user data, show a spinner to prevent premature checks.
-  if (resolving) {
+  if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -30,8 +28,6 @@ export default function AdminLayout({
     );
   }
 
-  // After resolving, if the user is still not an admin, they will be redirected.
-  // This UI might flash briefly before the redirect, or show if something unexpected happens.
   if (!user || user.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-full">
@@ -45,7 +41,6 @@ export default function AdminLayout({
       </div>
     );
   }
-
-  // If resolution is complete and the user is an admin, render the content.
+  
   return <>{children}</>;
 }

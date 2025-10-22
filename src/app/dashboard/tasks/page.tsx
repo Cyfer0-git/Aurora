@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useFirestore } from '@/firebase';
 import type { Task, User } from '@/lib/definitions';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
@@ -21,10 +21,12 @@ import {
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useState, useEffect, useRef } from 'react';
-import { db } from '@/lib/firebase';
 import { collection, onSnapshot, doc, updateDoc, query, where } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 function TaskCard({ task, assignedBy }: { task: Task; assignedBy: User | undefined }) {
+  const db = useFirestore();
   const [status, setStatus] = useState(task.status);
   
   const getInitials = (name: string) => {
@@ -37,10 +39,18 @@ function TaskCard({ task, assignedBy }: { task: Task; assignedBy: User | undefin
   }
   
   const handleStatusChange = async (newStatus: Task['status']) => {
+    if (!db) return;
     setStatus(newStatus);
     const taskRef = doc(db, "tasks", task.id);
-    await updateDoc(taskRef, {
+    updateDoc(taskRef, {
       status: newStatus
+    }).catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: taskRef.path,
+            operation: 'update',
+            requestResourceData: { status: newStatus },
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
   }
 
@@ -104,7 +114,8 @@ function TaskCard({ task, assignedBy }: { task: Task; assignedBy: User | undefin
 }
 
 export default function TasksPage() {
-  const { user } = useAuth();
+  const { user } = useUser();
+  const db = useFirestore();
   const [userTasks, setUserTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -113,12 +124,12 @@ export default function TasksPage() {
   const usersLoaded = useRef(false);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !db) {
       setIsLoading(false);
       return;
     };
 
-    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id));
+    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.uid));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
       const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
       setUserTasks(tasksData);
@@ -142,7 +153,7 @@ export default function TasksPage() {
       tasksUnsubscribe();
       usersUnsubscribe();
     }
-  }, [user]);
+  }, [user, db]);
 
   const getUserById = (id: string) => users.find(u => u.id === id);
 

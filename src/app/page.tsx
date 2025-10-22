@@ -2,22 +2,22 @@
 
 import { AuthForm } from '@/components/auth-forms';
 import AppLogo from '@/components/app-logo';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useUser();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!isLoading && user) {
       router.push('/dashboard');
     }
-  }, [user, loading, router]);
+  }, [user, isLoading, router]);
 
-  if (loading || user) {
+  if (isLoading || user) {
      return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

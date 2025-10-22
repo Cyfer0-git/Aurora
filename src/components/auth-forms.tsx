@@ -16,8 +16,27 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/firebase';
 import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from 'firebase/auth';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  setDoc,
+  doc,
+} from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import type { User } from '@/lib/definitions';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
+
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -35,7 +54,9 @@ type AuthFormProps = {
 };
 
 export function AuthForm({ mode }: AuthFormProps) {
-  const { login, signup } = useAuth();
+  const auth = useAuth();
+  const db = useFirestore();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
   const formSchema = mode === 'login' ? loginSchema : signupSchema;
@@ -49,20 +70,125 @@ export function AuthForm({ mode }: AuthFormProps) {
         : { name: '', email: '', password: '' },
   });
 
-  async function onSubmit(values: FormValues) {
+  const handleLogin = async (values: z.infer<typeof loginSchema>) => {
+    if (!auth) return;
     setIsLoading(true);
     try {
-      if (mode === 'login') {
-        const { email, password } = values as z.infer<typeof loginSchema>;
-        await login(email, password);
-      } else {
-        const { name, email, password } = values as z.infer<typeof signupSchema>;
-        await signup(name, email, password);
-      }
-    } catch (error) {
-      console.error(error);
+      await signInWithEmailAndPassword(auth, values.email, values.password);
+      toast({
+          title: 'Login Successful',
+          description: `Welcome back!`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Login Failed',
+        description: 'Invalid credentials. Please try again.',
+      });
+      console.error("Login error:", error);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  const handleSignup = async (values: z.infer<typeof signupSchema>) => {
+    if (!auth || !db) return;
+    setIsLoading(true);
+
+    const { name, email, password } = values;
+
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+
+      let existingUserDoc: any = null;
+      let existingUserDocId: string | null = null;
+      querySnapshot.forEach((doc) => {
+          if (!doc.data().id || doc.data().id === '') {
+            existingUserDoc = doc.data();
+            existingUserDocId = doc.id;
+          }
+      });
+      
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      if (existingUserDoc && existingUserDocId) {
+        // This is an invited user completing their signup.
+        const userDocRef = doc(db, 'users', existingUserDocId);
+        const userDataToUpdate = {
+            id: firebaseUser.uid, 
+            name: name,
+            avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+        };
+        await updateDoc(userDocRef, userDataToUpdate)
+        .catch(async (serverError) => {
+            const permissionError = new FirestorePermissionError({
+                path: userDocRef.path,
+                operation: 'update',
+                requestResourceData: userDataToUpdate,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+            throw serverError; // Re-throw to stop execution and show toast
+        });
+
+        toast({
+          title: 'Account Activated',
+          description: `Welcome, ${name}! Your account is now active.`,
+        });
+
+      } else {
+        // This is a brand new user, not an invited one.
+        const newUser: User = {
+          id: firebaseUser.uid,
+          name,
+          email,
+          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+          role: 'Support', // Default role for all new signups
+        };
+        const newUserDocRef = doc(db, 'users', firebaseUser.uid);
+        await setDoc(newUserDocRef, newUser)
+        .catch(async (serverError) => {
+             const permissionError = new FirestorePermissionError({
+                path: newUserDocRef.path,
+                operation: 'create',
+                requestResourceData: newUser,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+            throw serverError;
+        });
+        toast({
+          title: 'Signup Successful',
+          description: `Welcome, ${name}!`,
+        });
+      }
+    } catch (error: any) {
+      let errorMessage = 'An unexpected error occurred during signup.';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already registered. Please log in.';
+      } else if (error.name === 'FirestorePermissionError') {
+        errorMessage = 'You do not have permission to create an account.'
+      } else if (error.message){
+        errorMessage = error.message;
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Signup Failed',
+        description: errorMessage,
+      });
+      console.error("Signup error:", error);
+    } finally {
+        setIsLoading(false);
+    }
+  }
+
+
+  async function onSubmit(values: FormValues) {
+    if (mode === 'login') {
+      await handleLogin(values as z.infer<typeof loginSchema>);
+    } else {
+      await handleSignup(values as z.infer<typeof signupSchema>);
     }
   }
 

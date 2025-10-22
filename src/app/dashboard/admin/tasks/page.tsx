@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Calendar } from '@/components/ui/calendar';
 import type { Task, User } from '@/lib/definitions';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -62,8 +62,9 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { db } from '@/lib/firebase';
 import { collection, addDoc, onSnapshot, serverTimestamp, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 
 const taskSchema = z.object({
@@ -76,7 +77,8 @@ const taskSchema = z.object({
 });
 
 export default function ManageTasksPage() {
-  const { user: adminUser } = useAuth();
+  const { user: adminUser } = useUser();
+  const db = useFirestore();
   const { toast } = useToast();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -86,6 +88,7 @@ export default function ManageTasksPage() {
   const usersLoaded = useRef(false);
 
   useEffect(() => {
+    if (!db) return;
     const tasksQuery = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
       const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
@@ -110,7 +113,7 @@ export default function ManageTasksPage() {
       tasksUnsubscribe();
       usersUnsubscribe();
     }
-  }, []);
+  }, [db]);
 
   const form = useForm<z.infer<typeof taskSchema>>({
     resolver: zodResolver(taskSchema),
@@ -118,47 +121,51 @@ export default function ManageTasksPage() {
   });
 
   async function onSubmit(values: z.infer<typeof taskSchema>) {
-    if (!adminUser) return;
-    try {
-      await addDoc(collection(db, 'tasks'), {
-        title: values.title,
-        description: values.description,
-        assignedTo: values.assignedTo,
-        assignedBy: adminUser.id,
-        dueDate: values.dueDate,
-        status: 'To-Do',
-        createdAt: serverTimestamp(),
-      });
-      toast({
-        title: 'Task Created',
-        description: `"${values.title}" has been assigned.`,
-      });
-      form.reset();
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Could not create task.',
-      });
-      console.error(error);
+    if (!adminUser || !db) return;
+    const newTask = {
+      title: values.title,
+      description: values.description,
+      assignedTo: values.assignedTo,
+      assignedBy: adminUser.uid,
+      dueDate: values.dueDate,
+      status: 'To-Do',
+      createdAt: serverTimestamp(),
     }
+    addDoc(collection(db, 'tasks'), newTask)
+    .then(() => {
+        toast({
+            title: 'Task Created',
+            description: `"${values.title}" has been assigned.`,
+        });
+        form.reset();
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'tasks',
+            operation: 'create',
+            requestResourceData: newTask,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   }
 
   const handleDeleteTask = async (taskId: string) => {
-    try {
-      await deleteDoc(doc(db, "tasks", taskId));
-      toast({
-        title: "Task Deleted",
-        description: "The task has been removed.",
-      });
-    } catch (error) {
-       toast({
-        variant: "destructive",
-        title: "Error Deleting Task",
-        description: "Could not remove the task.",
-      });
-      console.error("Error deleting task: ", error);
-    }
+    if (!db) return;
+    const docRef = doc(db, "tasks", taskId);
+    deleteDoc(docRef)
+    .then(() => {
+        toast({
+            title: "Task Deleted",
+            description: "The task has been removed.",
+        });
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'delete',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   };
 
   const getInitials = (name: string) => {

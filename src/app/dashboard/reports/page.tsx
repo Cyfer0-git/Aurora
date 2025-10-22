@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useFirestore } from '@/firebase';
 import type { Report, User } from '@/lib/definitions';
 import { format } from 'date-fns';
 import { useForm } from 'react-hook-form';
@@ -44,8 +44,9 @@ import {
 } from '@/components/ui/popover';
 import { CalendarIcon, File, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/firebase';
 import { collection, addDoc, onSnapshot, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const reportSchema = z.object({
   shiftType: z.enum(['morning', 'evening', 'night'], {
@@ -70,16 +71,17 @@ const reportSchema = z.object({
 });
 
 export default function ReportsPage() {
-  const { user } = useAuth();
+  const { user } = useUser();
+  const db = useFirestore();
   const { toast } = useToast();
   const [userReports, setUserReports] = useState<Report[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
     const q = query(
       collection(db, 'reports'), 
-      where('userId', '==', user.id)
+      where('userId', '==', user.uid)
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
@@ -92,7 +94,7 @@ export default function ReportsPage() {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user, db]);
   
   const getInitials = (name: string) => {
     if(!name) return '';
@@ -121,28 +123,30 @@ export default function ReportsPage() {
   });
 
   async function onSubmit(values: z.infer<typeof reportSchema>) {
-    if (!user) return;
-
-    try {
-      await addDoc(collection(db, 'reports'), {
+    if (!user || !db) return;
+    const newReport = {
         ...values,
-        userId: user.id,
+        userId: user.uid,
         content: values.content || 'N/A',
         submittedAt: serverTimestamp(),
-      });
-      toast({
-        title: 'Report Submitted',
-        description: 'Your daily report has been successfully submitted.',
-      });
-      form.reset();
-    } catch(error) {
+    };
+
+    addDoc(collection(db, 'reports'), newReport)
+    .then(() => {
         toast({
-            variant: "destructive",
-            title: "Submission Failed",
-            description: "Could not submit your report.",
+            title: 'Report Submitted',
+            description: 'Your daily report has been successfully submitted.',
         });
-        console.error(error);
-    }
+        form.reset();
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'reports',
+            operation: 'create',
+            requestResourceData: newReport,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   }
 
   return (

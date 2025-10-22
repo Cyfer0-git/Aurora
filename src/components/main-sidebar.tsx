@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -22,10 +22,11 @@ import {
   SidebarFooter,
 } from '@/components/ui/sidebar';
 import AppLogo from './app-logo';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useAuth } from '@/firebase';
 import { UserNav } from './user-nav';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { signOut } from 'firebase/auth';
 
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -56,7 +57,17 @@ const adminMenuItems = [
 
 export function MainSidebar() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user } = useUser();
+  const auth = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    if (auth) {
+        await signOut(auth);
+        router.push('/');
+    }
+  }
+
 
   const getInitials = (name: string) => {
     if (!name) return '';
@@ -137,7 +148,7 @@ export function MainSidebar() {
                 <span className="text-xs text-muted-foreground">{user.email}</span>
               </div>
               <div className="ml-auto">
-                <UserNav />
+                <UserNav onLogout={handleLogout} />
               </div>
             </>
           )}

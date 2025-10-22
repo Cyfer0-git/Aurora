@@ -20,7 +20,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import type { Announcement } from '@/lib/definitions';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -28,8 +28,9 @@ import { z } from 'zod';
 import { useState, useEffect } from 'react';
 import { Megaphone, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { db } from '@/lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 
 const announcementSchema = z.object({
@@ -42,12 +43,14 @@ const announcementSchema = z.object({
 });
 
 export default function ManageAnnouncementsPage() {
-  const { user } = useAuth();
+  const { user } = useUser();
+  const db = useFirestore();
   const { toast } = useToast();
   const [allAnnouncements, setAllAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!db) return;
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const announcements: Announcement[] = [];
@@ -58,7 +61,7 @@ export default function ManageAnnouncementsPage() {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [db]);
 
   const form = useForm<z.infer<typeof announcementSchema>>({
     resolver: zodResolver(announcementSchema),
@@ -66,44 +69,49 @@ export default function ManageAnnouncementsPage() {
   });
 
   async function onSubmit(values: z.infer<typeof announcementSchema>) {
-    if (!user) return;
-    try {
-      await addDoc(collection(db, 'announcements'), {
-        title: values.title,
-        content: values.content,
-        author: user.name,
-        authorId: user.id,
-        createdAt: serverTimestamp(),
-      });
-      toast({
-        title: 'Announcement Published',
-        description: 'Your announcement is now visible to the team.',
-      });
-      form.reset();
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Could not publish announcement.',
-      });
-      console.error(error);
-    }
+    if (!user || !db) return;
+    const newAnnouncement = {
+      title: values.title,
+      content: values.content,
+      author: user.name,
+      authorId: user.uid,
+      createdAt: serverTimestamp(),
+    };
+    
+    addDoc(collection(db, 'announcements'), newAnnouncement)
+    .then(() => {
+        toast({
+            title: 'Announcement Published',
+            description: 'Your announcement is now visible to the team.',
+        });
+        form.reset();
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'announcements',
+            operation: 'create',
+            requestResourceData: newAnnouncement,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   }
   
   const handleDelete = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'announcements', id));
-      toast({
-        title: 'Announcement Deleted',
-      });
-    } catch (error) {
-       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Could not delete announcement.',
-      });
-      console.error(error);
-    }
+    if (!db) return;
+    const docRef = doc(db, 'announcements', id);
+    deleteDoc(docRef)
+    .then(() => {
+        toast({
+            title: 'Announcement Deleted',
+        });
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'delete',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   }
 
   return (

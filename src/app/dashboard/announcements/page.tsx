@@ -11,15 +11,17 @@ import { formatDistanceToNow } from 'date-fns';
 import { Megaphone } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { Announcement } from '@/lib/definitions';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 
 export default function AnnouncementsPage() {
+  const db = useFirestore();
   const [sortedAnnouncements, setSortedAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!db) return;
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const announcementsData: Announcement[] = [];
@@ -30,7 +32,7 @@ export default function AnnouncementsPage() {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [db]);
 
   return (
     <div>

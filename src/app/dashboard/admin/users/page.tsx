@@ -61,8 +61,9 @@ import type { User } from '@/lib/definitions';
 import { useState, useEffect } from 'react';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useFirestore } from '@/firebase';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 
 const newUserSchema = z.object({
@@ -73,13 +74,15 @@ const newUserSchema = z.object({
 });
 
 export default function ManageUsersPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser } = useUser();
+  const db = useFirestore();
   const [userList, setUserList] = useState<User[]>([]);
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!db) return;
     const q = collection(db, 'users');
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const users: User[] = [];
@@ -90,7 +93,7 @@ export default function ManageUsersPage() {
       setIsLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [db]);
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),
@@ -98,7 +101,8 @@ export default function ManageUsersPage() {
   });
   
   const handleRoleChange = async (userId: string, newRole: User['role']) => {
-    if (currentUser?.id === userId && newRole !== 'admin') {
+    if (!db) return;
+    if (currentUser?.uid === userId && newRole !== 'admin') {
       toast({
         variant: "destructive",
         title: "Action Forbidden",
@@ -107,24 +111,26 @@ export default function ManageUsersPage() {
       return;
     }
 
-    try {
-      const userDocRef = doc(db, 'users', userId);
-      await updateDoc(userDocRef, { role: newRole });
-      toast({
-        title: 'Role Updated',
-        description: 'User role has been successfully changed.',
+    const userDocRef = doc(db, 'users', userId);
+    updateDoc(userDocRef, { role: newRole })
+      .then(() => {
+        toast({
+            title: 'Role Updated',
+            description: 'User role has been successfully changed.',
+        });
+      })
+      .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: userDocRef.path,
+            operation: 'update',
+            requestResourceData: { role: newRole },
+        });
+        errorEmitter.emit('permission-error', permissionError);
       });
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Could not update user role.',
-      });
-      console.error('Error updating role: ', error);
-    }
   };
 
   async function onSubmit(values: z.infer<typeof newUserSchema>) {
+    if (!db) return;
     const userExists = userList.some(user => user.email === values.email);
     if(userExists){
       toast({
@@ -135,34 +141,36 @@ export default function ManageUsersPage() {
       return;
     }
 
-    try {
-      // The `id` field will be intentionally left blank. The user will set it
-      // when they complete their signup.
-      await addDoc(collection(db, 'users'), {
+    const newUser = {
         name: values.name,
         email: values.email,
         role: values.role,
         avatarUrl: `https://picsum.photos/seed/${userList.length + 1}/40/40`,
-      });
+        id: '', // Intentionally left blank for invited users
+    };
 
-      toast({
-        title: 'User Invited',
-        description: `${values.name} has been added. They will need to sign up to create their password.`,
-      });
-      form.reset();
-      setIsDialogOpen(false);
-    } catch (error) {
-       toast({
-        variant: "destructive",
-        title: "Error creating user",
-        description: "An error occurred while adding the user.",
-      });
-      console.error("Error adding document: ", error);
-    }
+    addDoc(collection(db, 'users'), newUser)
+    .then(() => {
+        toast({
+            title: 'User Invited',
+            description: `${values.name} has been added. They will need to sign up to create their password.`,
+        });
+        form.reset();
+        setIsDialogOpen(false);
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'users',
+            operation: 'create',
+            requestResourceData: newUser,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   }
 
   const handleDeleteUser = async (userId: string) => {
-    if (currentUser?.id === userId) {
+    if (!db) return;
+    if (currentUser?.uid === userId) {
       toast({
         variant: "destructive",
         title: "Cannot delete yourself",
@@ -171,20 +179,21 @@ export default function ManageUsersPage() {
       return;
     }
 
-    try {
-      await deleteDoc(doc(db, "users", userId));
-      toast({
-        title: "User Deleted",
-        description: "The user has been removed from the team.",
-      });
-    } catch (error) {
-       toast({
-        variant: "destructive",
-        title: "Error Deleting User",
-        description: "Could not remove the user.",
-      });
-      console.error("Error deleting user: ", error);
-    }
+    const docRef = doc(db, "users", userId);
+    deleteDoc(docRef)
+    .then(() => {
+        toast({
+            title: "User Deleted",
+            description: "The user has been removed from the team.",
+        });
+    })
+    .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'delete',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
   };
 
   const getInitials = (name: string) => {
@@ -333,7 +342,7 @@ export default function ManageUsersPage() {
                   <TableCell className="text-right">
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                         <Button variant="ghost" size="icon" disabled={currentUser?.id === user.id}>
+                         <Button variant="ghost" size="icon" disabled={currentUser?.uid === user.id}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </AlertDialogTrigger>

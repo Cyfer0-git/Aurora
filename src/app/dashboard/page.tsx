@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useFirestore } from '@/firebase';
 import {
   ClipboardList,
   Megaphone,
@@ -21,7 +21,6 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
 import type { Task, Announcement } from '@/lib/definitions';
-import { db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 
 function BreakTimer() {
@@ -104,14 +103,15 @@ function BreakTimer() {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user } = useUser();
+  const db = useFirestore();
   const [userTasks, setUserTasks] = useState<Task[]>([]);
   const [recentAnnouncements, setRecentAnnouncements] = useState<Announcement[]>([]);
 
   useEffect(() => {
-    if(!user) return;
+    if(!user || !db) return;
     
-    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.id));
+    const tasksQuery = query(collection(db, 'tasks'), where('assignedTo', '==', user.uid));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
       const allTasks = snapshot.docs.map(doc => ({id: doc.id, ...doc.data() } as Task));
       const activeTasks = allTasks.filter(task => task.status !== 'Done');
@@ -127,7 +127,7 @@ export default function DashboardPage() {
       tasksUnsubscribe();
       announcementsUnsubscribe();
     }
-  }, [user]);
+  }, [user, db]);
 
   return (
     <div>

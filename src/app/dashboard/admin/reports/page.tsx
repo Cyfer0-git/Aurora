@@ -5,10 +5,11 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { useState, useEffect, useRef } from 'react';
 import type { Report, User } from '@/lib/definitions';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 export default function ViewReportsPage() {
+  const db = useFirestore();
   const [sortedReports, setSortedReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -19,6 +20,7 @@ export default function ViewReportsPage() {
 
 
   useEffect(() => {
+    if (!db) return;
     const reportsQuery = query(collection(db, 'reports'), orderBy('submittedAt', 'desc'));
     const reportsUnsubscribe = onSnapshot(reportsQuery, (snapshot) => {
       const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
@@ -43,7 +45,7 @@ export default function ViewReportsPage() {
       reportsUnsubscribe();
       usersUnsubscribe();
     }
-  }, []);
+  }, [db]);
 
   const getInitials = (name: string) => {
     if(!name) return '';

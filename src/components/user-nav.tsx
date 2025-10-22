@@ -11,17 +11,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser } from '@/firebase';
 import { LogOut, User as UserIcon } from 'lucide-react';
 
-export function UserNav() {
-  const { user, logout } = useAuth();
+export function UserNav({ onLogout }: { onLogout: () => void }) {
+  const { user } = useUser();
 
   if (!user) {
     return null;
   }
 
   const getInitials = (name: string) => {
+    if (!name) return '';
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length-1][0]}`;
@@ -56,7 +57,7 @@ export function UserNav() {
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={logout}>
+        <DropdownMenuItem onClick={onLogout}>
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
         </DropdownMenuItem>

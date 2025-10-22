@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@/hooks/use-auth';
+import { useUser } from '@/firebase';
 import { MainSidebar } from '@/components/main-sidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Loader2 } from 'lucide-react';
@@ -12,14 +12,16 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useUser();
   const router = useRouter();
 
-  // This is the gatekeeper for the entire dashboard.
-  // It waits until the auth state is fully resolved (loading is false).
-  // If loading is finished and there's still no user, the AuthProvider's
-  // own useEffect will handle the redirect to the login page.
-  if (loading) {
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/');
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading || !user) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -27,20 +29,6 @@ export default function DashboardLayout({
     );
   }
 
-  // If loading is complete and there is no user, it means the redirect
-  // from AuthProvider is about to happen. We can show a loader to avoid
-  // a flash of an empty screen.
-  if (!user) {
-     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // Only if loading is complete AND we have a user object, do we render
-  // the main dashboard layout. By this point, the user object is guaranteed
-  // to be complete, including the 'role' property.
   return (
     <SidebarProvider>
       <div className="flex">

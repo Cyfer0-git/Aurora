@@ -11,10 +11,11 @@ import { Users, ClipboardList, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where, getDocs, Timestamp, orderBy, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import type { User, Task, Report } from '@/lib/definitions';
 
 export default function AdminDashboardPage() {
+  const db = useFirestore();
   const [totalUsers, setTotalUsers] = useState(0);
   const [activeTasks, setActiveTasks] = useState(0);
   const [reportsToday, setReportsToday] = useState(0);
@@ -22,6 +23,8 @@ export default function AdminDashboardPage() {
   const [usersMap, setUsersMap] = useState<Map<string, User>>(new Map());
 
   useEffect(() => {
+    if (!db) return;
+
     // Fetch all users and create a map
     const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersData = new Map<string, User>();
@@ -65,7 +68,7 @@ export default function AdminDashboardPage() {
       reportsUnsub();
       recentReportsUnsub();
     };
-  }, []);
+  }, [db]);
 
   const getUserById = (id: string) => usersMap.get(id);
 

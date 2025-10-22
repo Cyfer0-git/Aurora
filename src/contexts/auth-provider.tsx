@@ -10,10 +10,14 @@ import {
   signInWithEmailAndPassword,
   User as FirebaseAuthUser,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, getDoc, query, where, getDocs, collection, updateDoc } from 'firebase/firestore';
 import type { User } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
+
 
 interface AuthContextType {
   user: User | null;
@@ -42,10 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDoc.exists()) {
           setUser({ id: firebaseUser.uid, ...userDoc.data() } as User);
         } else {
-          // This can happen if the user is in Auth but not in Firestore.
-          // For this app, we'll treat them as logged out.
           setUser(null);
-          await signOut(auth); // Sign them out of Auth as well
+          await signOut(auth);
         }
       } else {
         setUser(null);
@@ -65,7 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting the user and redirecting
       toast({
           title: 'Login Successful',
           description: `Welcome back!`,
@@ -83,52 +84,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      // 1. Check if an admin has already created a placeholder for this email
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
-      const existingUserDoc = querySnapshot.docs[0];
-
-      if (existingUserDoc && existingUserDoc.data().id) {
-        // A user document exists and it already has an ID, meaning the account is active.
-        toast({
-          variant: "destructive",
-          title: "Signup Failed",
-          description: "This email is already associated with an active account. Please log in.",
-        });
-        return;
-      }
-
-      // 2. Create the user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
-      if (existingUserDoc) {
-        // 3. A placeholder document exists. Update it with the new Auth UID.
-        const userDocRef = doc(db, 'users', existingUserDoc.id);
-        await updateDoc(userDocRef, {
-          id: firebaseUser.uid,
-          name: name, // Allow user to set their name
+      const newUser: Omit<User, 'id'> = {
+        name,
+        email,
+        avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+        role: 'Support', // Default role for new signups
+      };
+
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+
+      // Use the new error handling pattern
+      setDoc(userDocRef, newUser)
+        .then(() => {
+          toast({
+            title: 'Signup Successful',
+            description: `Welcome, ${name}! Redirecting to your dashboard.`,
+          });
+          router.push('/dashboard');
+        })
+        .catch(async (serverError) => {
+          // This block now specifically handles Firestore errors
+          const permissionError = new FirestorePermissionError({
+            path: userDocRef.path,
+            operation: 'create',
+            requestResourceData: newUser,
+          });
+
+          // Emit the detailed error for the listener to catch
+          errorEmitter.emit('permission-error', permissionError);
         });
-      } else {
-        // 4. No placeholder exists. Create a brand new user document.
-        const newUser: User = {
-          id: firebaseUser.uid,
-          name,
-          email,
-          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-          role: 'Support', // Default role for new signups
-        };
-        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-      }
-      
-      toast({
-        title: 'Signup Successful',
-        description: `Welcome, ${name}! Redirecting to your dashboard.`,
-      });
-      router.push('/dashboard');
 
     } catch (error: any) {
+      // This block now primarily handles Authentication errors
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';
@@ -140,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: 'Signup Failed',
         description: errorMessage,
       });
-      console.error("Signup error:", error);
+      console.error("Authentication error:", error);
     }
   };
 
@@ -150,7 +140,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/');
   };
 
-  // If loading, and on a protected route, show a loader.
   if (loading && !publicRoutes.includes(pathname)) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -159,14 +148,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // If not loading, and on a protected route without a user,
-  // the useEffect above will handle the redirect. Render null to avoid flicker.
   if (!loading && !user && !publicRoutes.includes(pathname)) {
     return null;
   }
 
   return (
     <AuthContext.Provider value={{ user, loading, logout, login, signup }}>
+      <FirebaseErrorListener />
       {children}
     </AuthContext.Provider>
   );

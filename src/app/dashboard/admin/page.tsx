@@ -13,6 +13,8 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where, getDocs, Timestamp, orderBy, limit } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import type { User, Task, Report } from '@/lib/definitions';
+import { FirestorePermissionError } from '@/firebase/errors';
+import { errorEmitter } from '@/firebase/error-emitter';
 
 export default function AdminDashboardPage() {
   const db = useFirestore();
@@ -31,13 +33,28 @@ export default function AdminDashboardPage() {
       snapshot.forEach(doc => usersData.set(doc.id, { id: doc.id, ...doc.data() } as User));
       setUsersMap(usersData);
       setTotalUsers(snapshot.size);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: 'users',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
 
     // Fetch active tasks
+    const activeTasksQuery = query(collection(db, 'tasks'), where('status', '!=', 'Done'));
     const tasksUnsub = onSnapshot(
-      query(collection(db, 'tasks'), where('status', '!=', 'Done')),
+      activeTasksQuery,
       (snapshot) => {
         setActiveTasks(snapshot.size);
+      },
+      async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: activeTasksQuery.converter?.toString() || 'tasks',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
       }
     );
 
@@ -50,6 +67,13 @@ export default function AdminDashboardPage() {
     );
     const reportsUnsub = onSnapshot(qReports, (snapshot) => {
       setReportsToday(snapshot.size);
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: qReports.converter?.toString() || 'reports',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
     
     // Fetch recent reports
@@ -60,7 +84,14 @@ export default function AdminDashboardPage() {
     );
     const recentReportsUnsub = onSnapshot(recentReportsQuery, (snapshot) => {
        setRecentReports(snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Report)));
-    })
+    },
+    async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: recentReportsQuery.converter?.toString() || 'reports',
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+    });
 
     return () => {
       usersUnsub();
@@ -140,3 +171,5 @@ export default function AdminDashboardPage() {
       </Card>
     </div>
   );
+
+    

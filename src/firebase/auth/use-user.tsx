@@ -21,29 +21,27 @@ export function useUser() {
 
   React.useEffect(() => {
     if (!auth || !firestore) {
-      // Firebase services might not be available yet.
       return;
     }
     
     const unsubscribe = onAuthStateChanged(auth, (authUser) => {
       if (authUser) {
-        // User is authenticated, now get their data from Firestore.
+        // THIS IS THE CRITICAL CHANGE: Force a refresh of the ID token.
+        // This ensures that any custom claims (like `admin: true`) are included
+        // in the token that Firestore Security Rules will evaluate.
+        authUser.getIdToken(true);
+
         const userDocRef = doc(firestore, `users/${authUser.uid}`);
         
         const unsubFromUser = onSnapshot(userDocRef, (userDoc) => {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
 
-            // This is the critical data consistency check.
-            // If the `id` field in the document doesn't match the auth UID, update it.
             if (userData.id !== authUser.uid) {
                setDoc(userDocRef, { id: authUser.uid }, { merge: true });
             }
 
-            // Check if the current user is the designated admin but doesn't have the admin role yet.
             if (authUser.email === ADMIN_EMAIL && userData.role !== 'admin') {
-              // This is the admin user, but their role is incorrect in Firestore.
-              // We will update it for them.
               const updatedAdminData = { ...userData, role: 'admin' as const, id: authUser.uid };
               setDoc(userDocRef, updatedAdminData, { merge: true })
                 .then(() => {
@@ -65,28 +63,24 @@ export function useUser() {
                 });
 
             } else {
-              // This is a regular user or an admin with the correct role.
               setUser({
                 ...userData,
                 uid: authUser.uid,
-                id: authUser.uid, // Ensure id is consistent
+                id: authUser.uid,
                 email: authUser.email || userData.email, 
               });
               setIsLoading(false);
             }
           } else {
-            // User is authenticated but no record in Firestore.
-            // This can happen during signup or if the record is deleted.
              const newUserRole = authUser.email === ADMIN_EMAIL ? 'admin' : 'Support';
              const newUser: User = {
                 uid: authUser.uid,
                 email: authUser.email!,
                 name: authUser.displayName || "New User",
                 role: newUserRole,
-                id: authUser.uid, // Critically, set the id to the auth uid on creation
+                id: authUser.uid,
                 avatarUrl: `https://picsum.photos/seed/${authUser.uid}/40/40`,
              };
-             // Create the document for the new user.
              setDoc(userDocRef, newUser).then(() => {
                 setUser(newUser);
              }).catch(serverError => {
@@ -101,29 +95,23 @@ export function useUser() {
              })
           }
         }, (err) => {
-            // Handle Firestore read errors
             console.error("Error fetching user document:", err);
             setError(err);
             setIsLoading(false);
         });
 
-        // This function will be called when the effect cleans up.
-        // It's important for detaching the Firestore listener.
         return unsubFromUser;
 
       } else {
-        // User is not authenticated.
         setUser(null);
         setIsLoading(false);
       }
     }, (err) => {
-        // Handle Auth state change errors
         console.error("Error in onAuthStateChanged:", err);
         setError(err);
         setIsLoading(false);
     });
 
-    // Cleanup subscription on component unmount
     return () => unsubscribe();
   }, [auth, firestore]);
 

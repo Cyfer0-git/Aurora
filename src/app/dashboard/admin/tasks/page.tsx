@@ -48,7 +48,7 @@ import { useToast } from '@/hooks/use-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { CalendarIcon, PlusCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -77,57 +77,70 @@ const taskSchema = z.object({
 });
 
 export default function ManageTasksPage() {
-  const { user: adminUser } = useUser();
+  const { user: adminUser, isLoading: isUserLoading } = useUser();
   const db = useFirestore();
   const { toast } = useToast();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const tasksLoaded = useRef(false);
-  const usersLoaded = useRef(false);
-
   useEffect(() => {
-    if (!db) return;
+    if (!db || isUserLoading || !adminUser) return;
+    if(adminUser.role !== 'admin'){
+      setIsLoading(false);
+      setAllTasks([]);
+      setUsers([]);
+      return;
+    }
+
+    let tasksDone = false;
+    let usersDone = false;
+
+    const checkLoadingDone = () => {
+      if (tasksDone && usersDone) {
+        setIsLoading(false);
+      }
+    };
+
     const tasksQuery = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
     const tasksUnsubscribe = onSnapshot(tasksQuery, (snapshot) => {
       const tasksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
       setAllTasks(tasksData);
-      tasksLoaded.current = true;
-      if (usersLoaded.current || snapshot.empty) {
-        setIsLoading(false);
-      }
+      tasksDone = true;
+      checkLoadingDone();
     },
-    async (serverError) => {
+    (serverError) => {
         const permissionError = new FirestorePermissionError({
             path: 'tasks',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
+        tasksDone = true;
+        checkLoadingDone();
     });
 
     const usersQuery = collection(db, 'users');
     const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
       const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       setUsers(usersData);
-      usersLoaded.current = true;
-      if (tasksLoaded.current || usersData.length > 0) {
-        setIsLoading(false);
-      }
+      usersDone = true;
+      checkLoadingDone();
     },
-    async (serverError) => {
+    (serverError) => {
         const permissionError = new FirestorePermissionError({
             path: 'users',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
+        usersDone = true;
+        checkLoadingDone();
     });
 
     return () => {
       tasksUnsubscribe();
       usersUnsubscribe();
     }
-  }, [db]);
+  }, [db, adminUser, isUserLoading]);
 
   const form = useForm<z.infer<typeof taskSchema>>({
     resolver: zodResolver(taskSchema),

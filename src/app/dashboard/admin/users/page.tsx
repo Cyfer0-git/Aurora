@@ -74,15 +74,19 @@ const newUserSchema = z.object({
 });
 
 export default function ManageUsersPage() {
-  const { user: currentUser } = useUser();
+  const { user: currentUser, isLoading: isUserLoading } = useUser();
   const db = useFirestore();
   const [userList, setUserList] = useState<User[]>([]);
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || isUserLoading || !currentUser) return;
+    if(currentUser.role !== 'admin') {
+      setUserList([]);
+      return;
+    }
+
     const q = collection(db, 'users');
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const users: User[] = [];
@@ -90,9 +94,8 @@ export default function ManageUsersPage() {
         users.push({ id: doc.id, ...doc.data() } as User);
       });
       setUserList(users);
-      setIsLoading(false);
     },
-    async (serverError) => {
+    (serverError) => {
         const permissionError = new FirestorePermissionError({
             path: 'users',
             operation: 'list',
@@ -100,7 +103,7 @@ export default function ManageUsersPage() {
         errorEmitter.emit('permission-error', permissionError);
     });
     return () => unsubscribe();
-  }, [db]);
+  }, [db, currentUser, isUserLoading]);
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),
@@ -312,7 +315,7 @@ export default function ManageUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isUserLoading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-10">Loading users...</TableCell>
                 </TableRow>

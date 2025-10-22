@@ -5,63 +5,79 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { useState, useEffect, useRef } from 'react';
 import type { Report, User } from '@/lib/definitions';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useUser } from '@/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function ViewReportsPage() {
   const db = useFirestore();
+  const { user: currentUser, isLoading: isUserLoading } = useUser();
   const [sortedReports, setSortedReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+
+  // Combined loading state
   const [isLoading, setIsLoading] = useState(true);
 
-  // Use refs to track if the initial load has completed for each listener
-  const reportsLoaded = useRef(false);
-  const usersLoaded = useRef(false);
-
-
   useEffect(() => {
-    if (!db) return;
-    const reportsQuery = query(collection(db, 'reports'), orderBy('submittedAt', 'desc'));
-    const reportsUnsubscribe = onSnapshot(reportsQuery, (snapshot) => {
-      const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
-      setSortedReports(reportsData);
-      reportsLoaded.current = true;
-      if (usersLoaded.current) {
+    if (!db || isUserLoading || !currentUser) return;
+    if (currentUser.role !== 'admin') {
+      setIsLoading(false);
+      setSortedReports([]);
+      setUsers([]);
+      return;
+    }
+
+    let reportsData: Report[] = [];
+    let usersData: User[] = [];
+    let reportsDone = false;
+    let usersDone = false;
+
+    const checkLoadingDone = () => {
+      if (reportsDone && usersDone) {
         setIsLoading(false);
       }
+    };
+
+    const reportsQuery = query(collection(db, 'reports'), orderBy('submittedAt', 'desc'));
+    const reportsUnsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+      reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
+      setSortedReports(reportsData);
+      reportsDone = true;
+      checkLoadingDone();
     },
-    async (serverError) => {
+    (serverError) => {
         const permissionError = new FirestorePermissionError({
             path: 'reports',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
+        reportsDone = true;
+        checkLoadingDone();
     });
 
     const usersQuery = collection(db, 'users');
     const usersUnsubscribe = onSnapshot(usersQuery, (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       setUsers(usersData);
-      usersLoaded.current = true;
-      if (reportsLoaded.current) {
-        setIsLoading(false);
-      }
+      usersDone = true;
+      checkLoadingDone();
     },
-    async (serverError) => {
+    (serverError) => {
         const permissionError = new FirestorePermissionError({
             path: 'users',
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
+        usersDone = true;
+        checkLoadingDone();
     });
 
     return () => {
       reportsUnsubscribe();
       usersUnsubscribe();
     }
-  }, [db]);
+  }, [db, currentUser, isUserLoading]);
 
   const getInitials = (name: string) => {
     if(!name) return '';

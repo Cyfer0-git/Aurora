@@ -1,24 +1,24 @@
 /**
- * @file Firebase Security Rules for Firestore.
+ * @fileoverview Firestore Security Rules for Prototyping.
  *
  * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for user profiles and reports,
- * and allows public read access to announcements with owner-only writes. Tasks are globally accessible.
+ * This ruleset prioritizes security by enforcing strict user-ownership and role-based access control.
+ * It allows for rapid prototyping by skipping data validation and focusing on authorization.
  *
  * Data Structure:
  * - /users/{userId}: Stores user profile information, accessible only to the user themselves.
- * - /tasks/{taskId}: Stores tasks, globally accessible.
- * - /announcements/{announcementId}: Stores company announcements, publicly readable, but only authors can create/update/delete.
- * - /reports/{reportId}: Stores daily user reports, accessible only to the user themselves.
+ * - /tasks/{taskId}: Stores tasks.
+ * - /announcements/{announcementId}: Stores company announcements, publicly readable, owner-modifiable
+ * - /reports/{reportId}: Stores user reports, accessible only to the user themselves.
  *
  * Key Security Decisions:
- * - Users can only access their own profile data and reports.
- * - Announcements are publicly readable, but only the author can modify them.
- * - Tasks are accessible to everyone.
- * - User listing is disallowed for privacy.
+ * - Users can only read and write their own user documents.
+ * - Listing of users is disallowed.
+ * - Announcements are publicly readable but only the author can modify or delete them.
+ * - Reports are user-specific and only accessible to the user.
  *
  * Denormalization for Authorization:
- * - Announcements MUST include an `authorId` field to enable owner-only write rules.
+ * - Announcements require an `authorId` field within the document, matching the authenticated user's UID, to ensure secure ownership.
  */
 rules_version = '2';
 service cloud.firestore {
@@ -28,19 +28,21 @@ service cloud.firestore {
      * @description Controls access to user profile information.
      * @path /users/{userId}
      * @allow (create) - User with ID 'user123' can create their own profile.
-     *    Request: { "auth": { "uid": "user123" }, "resource": { "data": { "id": "user123", "name": "John Doe", "email": "john@example.com", "role": "admin" } } }
+     *   - request.auth.uid: 'user123'
+     *   - request.resource.data.id: 'user123'
      * @allow (get, update, delete) - User with ID 'user123' can read, update, and delete their own profile.
-     *    Request: { "auth": { "uid": "user123" } }
+     *   - request.auth.uid: 'user123'
      * @deny (create) - User with ID 'user456' cannot create a profile for 'user123'.
-     *    Request: { "auth": { "uid": "user456" }, "resource": { "data": { "id": "user123", "name": "John Doe", "email": "john@example.com", "role": "admin" } } }
-     * @deny (get, update, delete) - User with ID 'user456' cannot access profile 'user123'.
-     *    Request: { "auth": { "uid": "user456" } }
-     * @principle Enforces document ownership for all operations on user profiles.
+     *   - request.auth.uid: 'user456'
+     *   - request.resource.data.id: 'user123'
+     * @deny (get, update, delete) - User with ID 'user456' cannot read, update, or delete the profile of 'user123'.
+     *   - request.auth.uid: 'user456'
+     * @principle Enforces document ownership for all operations.
      */
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow create: if isOwner(userId) && request.resource.data.id == request.auth.uid;
       allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
     }
@@ -48,64 +50,66 @@ service cloud.firestore {
     /**
      * @description Controls access to tasks.
      * @path /tasks/{taskId}
-     * @allow (get, list) - Any user can read any task.
-     *    Request: { "auth": { "uid": "user123" } }
-     * @allow (create) - Any signed-in user can create a task.
-     *    Request: { "auth": { "uid": "user123" }, "resource": { "data": { "id": "task1", "title": "Fix bug", "assignedTo": "user456", "assignedBy": "user123", "dueDate": "2024-03-15T00:00:00Z", "status": "To-Do", "createdAt": "2024-03-08T00:00:00Z" } } }
-     * @allow (update) - Any signed-in user can update a task.
-     *    Request: { "auth": { "uid": "user123" } }
-     * @allow (delete) - Any signed-in user can delete a task.
-     *    Request: { "auth": { "uid": "user123" } }
-     * @principle Allows public access to tasks.
+     * @allow (create) Any authenticated user can create task.
+     *   - request.auth.uid: 'user123'
+     * @allow (get, list) Any authenticated user can read task.
+     *   - request.auth.uid: 'user123'
+     * @allow (update, delete) Any authenticated user can update and delete task.
+     *   - request.auth.uid: 'user123'
+     * @principle Any authenticated user can read and write.
      */
     match /tasks/{taskId} {
-      allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
     }
 
     /**
      * @description Controls access to company announcements.
      * @path /announcements/{announcementId}
-     * @allow (get, list) - Any user can read any announcement.
-     *    Request: { "auth": { "uid": "user123" } }
-     * @allow (create) - User with ID 'user123' can create an announcement if they are the author.
-     *    Request: { "auth": { "uid": "user123" }, "resource": { "data": { "id": "announcement1", "title": "New Policy", "content": "...", "author": "John Doe", "authorId": "user123", "createdAt": "2024-03-08T00:00:00Z" } } }
-     * @allow (update, delete) - User with ID 'user123' can update/delete their own announcement.
-     *    Request: { "auth": { "uid": "user123" } }
-     * @deny (create) - User with ID 'user456' cannot create an announcement for author 'user123'.
-     *    Request: { "auth": { "uid": "user456" }, "resource": { "data": { "id": "announcement1", "title": "New Policy", "content": "...", "author": "John Doe", "authorId": "user123", "createdAt": "2024-03-08T00:00:00Z" } } }
-     * @deny (update, delete) - User with ID 'user456' cannot update/delete announcement 'announcement1' created by 'user123'.
-     *    Request: { "auth": { "uid": "user456" } }
-     * @principle Allows public read access but enforces ownership for writes.
+     * @allow (get, list) Any user can read announcements.
+     *   - request.auth.uid: null
+     * @allow (create) User 'author123' can create an announcement if authorId matches.
+     *   - request.auth.uid: 'author123'
+     *   - request.resource.data.authorId: 'author123'
+     * @allow (update, delete) User 'author123' can update/delete their own announcement.
+     *   - request.auth.uid: 'author123'
+     *   - resource.data.authorId: 'author123'
+     * @deny (create) User 'otherUser' cannot create an announcement with authorId 'author123'.
+     *   - request.auth.uid: 'otherUser'
+     *   - request.resource.data.authorId: 'author123'
+     * @deny (update, delete) User 'otherUser' cannot update/delete announcement by 'author123'.
+     *   - request.auth.uid: 'otherUser'
+     *   - resource.data.authorId: 'author123'
+     * @principle Public read, owner-only writes enforced through authorId.
      */
     match /announcements/{announcementId} {
       allow get, list: if true;
       allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.authorId);
-      allow delete: if isExistingOwner(resource.data.authorId);
+      allow update: if isExistingOwnerAnnouncement(resource.data.authorId);
+      allow delete: if isExistingOwnerAnnouncement(resource.data.authorId);
     }
 
     /**
      * @description Controls access to user reports.
      * @path /reports/{reportId}
-     * @allow (create) - User with ID 'user123' can create their own report.
-     *    Request: { "auth": { "uid": "user123" }, "resource": { "data": { "id": "report1", "userId": "user123", "date": "2024-03-08T00:00:00Z", "submittedAt": "2024-03-08T00:00:00Z" } } }
+     * @allow (create) User with ID 'user123' can create their own report.
+     *   - request.auth.uid: 'user123'
+     *   - request.resource.data.userId: 'user123'
      * @allow (get, update, delete) - User with ID 'user123' can read, update, and delete their own report.
-     *    Request: { "auth": { "uid": "user123" } }
-     * @deny (create) - User with ID 'user456' cannot create a report for user 'user123'.
-     *    Request: { "auth": { "uid": "user456" }, "resource": { "data": { "id": "report1", "userId": "user123", "date": "2024-03-08T00:00:00Z", "submittedAt": "2024-03-08T00:00:00Z" } } }
-     * @deny (get, update, delete) - User with ID 'user456' cannot access report 'report1' created for user 'user123'.
-     *    Request: { "auth": { "uid": "user456" } }
-     * @principle Enforces document ownership for user reports.
+     *   - request.auth.uid: 'user123'
+     * @deny (create) - User with ID 'user456' cannot create a report for 'user123'.
+     *   - request.auth.uid: 'user456'
+     *   - request.resource.data.userId: 'user123'
+     * @deny (get, update, delete) - User with ID 'user456' cannot read, update, or delete the report of 'user123'.
+     *   - request.auth.uid: 'user456'
+     * @principle Enforces document ownership for all operations.
      */
     match /reports/{reportId} {
-      allow get: if isOwner(resource.data.userId);
-      allow list: if isOwner(resource.data.userId);
-      allow create: if isOwner(request.resource.data.userId) && request.resource.data.userId == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.userId) && request.resource.data.userId == resource.data.userId;
-      allow delete: if isExistingOwner(resource.data.userId);
+      allow get: if isOwnerReport(resource.data.userId);
+      allow list: if isOwnerReport(resource.data.userId);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isExistingOwnerReport(resource.data.userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isExistingOwnerReport(resource.data.userId);
     }
 
     function isSignedIn() {
@@ -118,6 +122,22 @@ service cloud.firestore {
 
     function isExistingOwner(userId) {
         return isOwner(userId) && resource != null;
+    }
+
+    function isOwnerAnnouncement(authorId) {
+      return request.auth.uid == authorId;
+    }
+
+    function isExistingOwnerAnnouncement(authorId) {
+        return isOwnerAnnouncement(authorId) && resource != null;
+    }
+
+    function isOwnerReport(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isExistingOwnerReport(userId) {
+        return isOwnerReport(userId) && resource != null;
     }
   }
 }

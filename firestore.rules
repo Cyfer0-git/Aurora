@@ -1,110 +1,119 @@
 /**
- * @file Firebase Security Rules
- * @description This ruleset enforces a role-based access control model with user-owned data.
+ * @file Firestore Security Rules
+ * @description This ruleset enforces a user-ownership model for user profiles and tasks,
+ *              allows public read access to announcements with owner-only writes,
+ *              and restricts access to user reports to the owner.
  *
- * Data Structure:
- * - /users/{userId}: Stores user profiles, accessible only to the user themselves (owner-only).
- * - /tasks/{taskId}: Tasks are publicly readable but only modifiable by admins.
- * - /announcements/{announcementId}: Announcements are publicly readable, and creatable, updatable, deletable only by the author (with matching authorId in document).
- * - /reports/{reportId}: Daily reports, readable and writable only by admins.
+ * @dataStructure
+ * /users/{userId}: Stores user profile information, accessible only to the user and admins.
+ * /tasks/{taskId}: Stores tasks assigned to users.
+ * /announcements/{announcementId}: Stores company announcements, publicly readable but writable only by the author.
+ * /reports/{reportId}: Stores daily user reports, accessible only to the user and admins.
  *
- * Key Security Decisions:
- * - User listing is disabled to protect user privacy.
- * - The 'reports' collection is only for admins.
+ * @keySecurityDecisions
+ * - Users can only read and write their own profile data.
+ * - Tasks can be created by any authenticated user, but only updated or deleted by the assigned user.
+ * - Announcements are publicly readable but can only be created, updated, or deleted by the author.
+ * - Reports are only accessible to the user who created them and admins.
+ * - Listing all users is disallowed for privacy reasons.
+ *
+ * @denormalizationForAuthorization
+ * - Announcements include an `authorId` field to simplify ownership checks.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the user is signed in.
-     * @return {boolean} True if the user is signed in, false otherwise.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Checks if the user is the owner of the document.
-     * @param {string} userId - The user ID to compare against the request's auth UID.
-     * @return {boolean} True if the user is the owner, false otherwise.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * @description Checks if the user is the owner of the document, and it exists.
-     * @param {string} userId - The user ID to compare against the resource's UID.
-     * @return {boolean} True if the user is the owner and the resource exists, false otherwise.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description Checks if the user has the 'admin' role.
-     * @return {boolean} True if the user has the 'admin' role, false otherwise.
-     */
-    function isAdmin() {
-        return isSignedIn() && (request.auth.token.role == 'admin');
-    }
-
-
-    /**
-     * @description Defines security rules for user profiles.
+     * @description Controls access to user profile information.
      * @path /users/{userId}
-     * @allow (create) - A user can create their own profile if the userId matches their auth.uid.
-     * @allow (get, update, delete) - A user can only access or modify their own profile.
-     * @deny (create) - A user cannot create a profile with a userId that doesn't match their auth.uid.
-     * @principle Enforces document ownership for user profiles.
+     * @allow (create) User with ID 'user123' can create their own profile.
+     *        request.auth.uid == 'user123' and request.resource.data.id == 'user123'
+     * @allow (get, update, delete) User with ID 'user123' can read, update, and delete their own profile.
+     *        request.auth.uid == 'user123'
+     * @deny (create) User with ID 'user456' cannot create a profile for 'user123'.
+     *       request.auth.uid == 'user456' and request.resource.data.id == 'user123'
+     * @deny (get, update, delete) User with ID 'user456' cannot read, update, or delete the profile of 'user123'.
+     *        request.auth.uid == 'user456'
+     * @principle Enforces document ownership for writes and restricts access to a user's own data.
      */
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow list: if false; // User listing is not allowed.
+      allow list: if false;
       allow create: if isOwner(userId) && request.resource.data.id == request.auth.uid;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow update: if isOwner(userId) && resource.data.id == request.resource.data.id;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Defines security rules for tasks.
+     * @description Controls access to tasks.
      * @path /tasks/{taskId}
-     * @allow (get, list) - Anyone can read tasks.
-     * @allow (create, update, delete) - Only admins can create, update, or delete tasks.
-     * @deny (create, update, delete) - Non-admins cannot create, update, or delete tasks.
-     * @principle Restricts task management to admins.
+     * @allow (create) Any authenticated user can create a task.
+     *        request.auth != null
+     * @allow (get, list) Any authenticated user can get and list tasks.
+     *        request.auth != null
+     * @allow (update, delete) Only the assigned user can update or delete a task.
+     *        request.auth.uid == resource.data.assignedTo
+     * @deny (update, delete) A user who is not assigned to the task cannot update or delete it.
+     *        request.auth.uid != resource.data.assignedTo
+     * @principle Enforces document ownership for writes.
      */
     match /tasks/{taskId} {
-      allow get, list: if true;
-      allow create, update, delete: if isAdmin();
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if resource.data.assignedTo == request.auth.uid && resource != null;
+      allow delete: if resource.data.assignedTo == request.auth.uid  && resource != null;
     }
 
     /**
-     * @description Defines security rules for announcements.
+     * @description Controls access to announcements.
      * @path /announcements/{announcementId}
-     * @allow (get, list) - Anyone can read announcements.
-     * @allow (create) - Users can create announcements only if the authorId matches their auth.uid.
-     * @allow (update, delete) - Only the author of the announcement can update or delete it.
-     * @deny (create) - Users cannot create announcements with an authorId that doesn't match their auth.uid.
-     * @principle Enforces ownership for announcement creation and modification.
+     * @allow (get, list) Any user can read the announcements.
+     *        true
+     * @allow (create) Only the author can create an announcement, with matching authorId.
+     *        request.auth.uid == request.resource.data.authorId
+     * @allow (update, delete) Only the author can update or delete their own announcement.
+     *        resource.data.authorId == request.auth.uid
+     * @deny (create) A user cannot create an announcement with an authorId that doesn't match their own.
+     *        request.auth.uid != request.resource.data.authorId
+     * @deny (update, delete) A user who is not the author cannot update or delete the announcement.
+     *        resource.data.authorId != request.auth.uid
+     * @principle Allows public read access, but restricts writes to the author.
      */
     match /announcements/{announcementId} {
       allow get, list: if true;
       allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.authorId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.authorId);
+      allow delete: if isExistingOwner(resource.data.authorId);
     }
 
     /**
-     * @description Defines security rules for reports.
+     * @description Controls access to user reports.
      * @path /reports/{reportId}
-     * @allow (get, list, create, update, delete) - Only admins can access and modify reports.
-     * @deny (get, list, create, update, delete) - Non-admins cannot access or modify reports.
-     * @principle Restricts report management to admins.
+     * @allow (get) Only the user who created the report can read it.
+     *        resource.data.userId == request.auth.uid
+     * @allow (list) Only the user can list their own reports.
+     *        resource.data.userId == request.auth.uid
+     * @deny (create, update, delete) No one can create, update, or delete a report.
+     *        false
+     * @principle Enforces document ownership and disallows write access.
      */
     match /reports/{reportId} {
-      allow get, list, create, update, delete: if isAdmin();
+      allow get: if resource.data.userId == request.auth.uid;
+      allow list: if resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
     }
+  }
+
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  function isOwner(userId) {
+    return request.auth.uid == userId;
+  }
+
+  function isExistingOwner(userId) {
+    return request.auth.uid == userId && resource != null;
   }
 }

@@ -72,118 +72,122 @@ export function AuthForm({ mode }: AuthFormProps) {
   const handleLogin = async (values: z.infer<typeof loginSchema>) => {
     if (!auth) return;
     setIsLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      toast({
-        title: 'Login Successful',
-        description: `Welcome back!`,
+    signInWithEmailAndPassword(auth, values.email, values.password)
+      .then(() => {
+        toast({
+          title: 'Login Successful',
+          description: `Welcome back!`,
+        });
+      })
+      .catch((error) => {
+        toast({
+          variant: 'destructive',
+          title: 'Login Failed',
+          description: 'Invalid credentials. Please try again.',
+        });
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: 'Invalid credentials. Please try again.',
-      });
-    } finally {
-      setIsLoading(false);
-    }
   }
 
-  const handleSignup = async (values: z.infer<typeof signupSchema>) => {
+  const handleSignup = (values: z.infer<typeof signupSchema>) => {
     if (!auth || !db) return;
     setIsLoading(true);
     
     const { name, email, password } = values;
 
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
+    createUserWithEmailAndPassword(auth, email, password)
+      .then(async (userCredential) => {
+        const firebaseUser = userCredential.user;
 
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where("email", "==", email));
+        const querySnapshot = await getDocs(q);
 
-      let existingUserDocId: string | null = null;
-      querySnapshot.forEach((doc) => {
-        if (!doc.data().id || doc.data().id === '') {
-          existingUserDocId = doc.id;
+        let existingUserDocId: string | null = null;
+        querySnapshot.forEach((doc) => {
+          if (!doc.data().id || doc.data().id === '') {
+            existingUserDocId = doc.id;
+          }
+        });
+
+        // Determine the role based on the email
+        const userRole = email === 'avay.gupta@auroramy.com' ? 'admin' : 'Support';
+
+        if (existingUserDocId) {
+          const userDocRef = doc(db, 'users', existingUserDocId);
+          const userDataToUpdate = {
+            id: firebaseUser.uid,
+            name: name,
+            avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+            role: userRole,
+          };
+          
+          updateDoc(userDocRef, userDataToUpdate)
+            .then(() => {
+              toast({
+                title: 'Account Activated',
+                description: `Welcome, ${name}! Your account is now active.`,
+              });
+            })
+            .catch(serverError => {
+              const permissionError = new FirestorePermissionError({
+                path: userDocRef.path,
+                operation: 'update',
+                requestResourceData: userDataToUpdate,
+              });
+              errorEmitter.emit('permission-error', permissionError);
+            }).finally(() => setIsLoading(false));
+
+        } else {
+          const newUser: User = {
+            id: firebaseUser.uid,
+            name,
+            email,
+            avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
+            role: userRole,
+          };
+          const newUserDocRef = doc(db, 'users', firebaseUser.uid);
+          
+          setDoc(newUserDocRef, newUser)
+            .then(() => {
+              toast({
+                title: 'Signup Successful',
+                description: `Welcome, ${name}!`,
+              });
+            })
+            .catch(serverError => {
+              const permissionError = new FirestorePermissionError({
+                path: newUserDocRef.path,
+                operation: 'create',
+                requestResourceData: newUser,
+              });
+              errorEmitter.emit('permission-error', permissionError);
+            }).finally(() => setIsLoading(false));
         }
+      })
+      .catch((error) => {
+        let errorMessage = 'An unexpected error occurred during signup.';
+        if (error.code === 'auth/email-already-in-use') {
+          errorMessage = 'This email is already registered. Please log in.';
+        } else {
+          errorMessage = error.message || errorMessage;
+        }
+        toast({
+          variant: 'destructive',
+          title: 'Signup Failed',
+          description: errorMessage,
+        });
+        setIsLoading(false);
       });
-
-      if (existingUserDocId) {
-        const userDocRef = doc(db, 'users', existingUserDocId);
-        const userDataToUpdate = {
-          id: firebaseUser.uid,
-          name: name,
-          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-        };
-        
-        updateDoc(userDocRef, userDataToUpdate)
-          .then(() => {
-            toast({
-              title: 'Account Activated',
-              description: `Welcome, ${name}! Your account is now active.`,
-            });
-            setIsLoading(false);
-          })
-          .catch(serverError => {
-            const permissionError = new FirestorePermissionError({
-              path: userDocRef.path,
-              operation: 'update',
-              requestResourceData: userDataToUpdate,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            setIsLoading(false);
-          });
-      } else {
-        const newUser: User = {
-          id: firebaseUser.uid,
-          name,
-          email,
-          avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-          role: 'Support',
-        };
-        const newUserDocRef = doc(db, 'users', firebaseUser.uid);
-        
-        setDoc(newUserDocRef, newUser)
-          .then(() => {
-            toast({
-              title: 'Signup Successful',
-              description: `Welcome, ${name}!`,
-            });
-            setIsLoading(false);
-          })
-          .catch(serverError => {
-            const permissionError = new FirestorePermissionError({
-              path: newUserDocRef.path,
-              operation: 'create',
-              requestResourceData: newUser,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            setIsLoading(false);
-          });
-      }
-    } catch (error: any) {
-      let errorMessage = 'An unexpected error occurred during signup.';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'This email is already registered. Please log in.';
-      } else {
-        errorMessage = error.message || errorMessage;
-      }
-      toast({
-        variant: 'destructive',
-        title: 'Signup Failed',
-        description: errorMessage,
-      });
-      setIsLoading(false);
-    }
   }
 
   async function onSubmit(values: FormValues) {
     if (mode === 'login') {
       await handleLogin(values as z.infer<typeof loginSchema>);
     } else {
-      await handleSignup(values as z.infer<typeof signupSchema>);
+      handleSignup(values as z.infer<typeof signupSchema>);
     }
   }
 

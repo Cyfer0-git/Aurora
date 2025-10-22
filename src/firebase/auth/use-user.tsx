@@ -1,12 +1,16 @@
 'use client';
 import { onAuthStateChanged, type User as FirebaseAuthUser } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import * as React from 'react';
 import { useAuth, useFirestore } from '..';
 import type { User } from '@/lib/definitions';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 // Combine Firebase Auth user with Firestore user data
 type UserData = User & { uid: string };
+
+const ADMIN_EMAIL = 'avay.gupta@auroramy.com';
 
 export function useUser() {
   const auth = useAuth();
@@ -29,27 +33,66 @@ export function useUser() {
         const unsubFromUser = onSnapshot(userDocRef, (userDoc) => {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
-            // Combine auth and firestore data into a single user object.
-            setUser({
-              ...userData,
-              uid: authUser.uid,
-              // Ensure critical auth fields are present if needed elsewhere
-              email: authUser.email || userData.email, 
-            });
+
+            // Check if the current user is the designated admin but doesn't have the admin role yet.
+            if (authUser.email === ADMIN_EMAIL && userData.role !== 'admin') {
+              // This is the admin user, but their role is incorrect in Firestore.
+              // We will update it for them.
+              const updatedAdminData = { ...userData, role: 'admin' as const };
+              setDoc(userDocRef, updatedAdminData, { merge: true })
+                .then(() => {
+                   setUser({
+                      ...updatedAdminData,
+                      uid: authUser.uid,
+                      email: authUser.email || updatedAdminData.email,
+                    });
+                })
+                .catch(serverError => {
+                    const permissionError = new FirestorePermissionError({
+                        path: userDocRef.path,
+                        operation: 'update',
+                        requestResourceData: { role: 'admin' },
+                    });
+                    errorEmitter.emit('permission-error', permissionError);
+                }).finally(() => {
+                    setIsLoading(false);
+                });
+
+            } else {
+              // This is a regular user or an admin with the correct role.
+              setUser({
+                ...userData,
+                uid: authUser.uid,
+                email: authUser.email || userData.email, 
+              });
+              setIsLoading(false);
+            }
           } else {
             // User is authenticated but no record in Firestore.
             // This can happen during signup or if the record is deleted.
-            // We consider this "loaded" but without extended user data.
-             setUser({
+             const newUserRole = authUser.email === ADMIN_EMAIL ? 'admin' : 'Support';
+             const newUser: User = {
                 uid: authUser.uid,
                 email: authUser.email!,
                 name: authUser.displayName || "New User",
-                role: 'Support', // A safe default
+                role: newUserRole,
                 id: authUser.uid,
                 avatarUrl: '',
-             });
+             };
+             // Create the document for the new user.
+             setDoc(userDocRef, newUser).then(() => {
+                setUser(newUser);
+             }).catch(serverError => {
+                const permissionError = new FirestorePermissionError({
+                    path: userDocRef.path,
+                    operation: 'create',
+                    requestResourceData: newUser,
+                });
+                errorEmitter.emit('permission-error', permissionError);
+             }).finally(() => {
+                setIsLoading(false);
+             })
           }
-          setIsLoading(false);
         }, (err) => {
             // Handle Firestore read errors
             console.error("Error fetching user document:", err);

@@ -59,7 +59,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/lib/definitions';
 import { useState, useEffect } from 'react';
-import { PlusCircle, Trash2 } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2 } from 'lucide-react';
 import { collection, onSnapshot, addDoc, serverTimestamp, query, where, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { useUser, useFirestore } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -70,19 +70,19 @@ const newUserSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
   email: z.string().email({ message: 'Invalid email address.' }),
   role: z.enum(['admin', 'Support', 'VIP', 'CS'], { required_error: 'Role is required.' }),
-  // Password is handled by a separate function, not in this form.
 });
 
 export default function ManageUsersPage() {
-  const { user: currentUser, isLoading: isUserLoading } = useUser();
+  const { user: currentUser } = useUser();
   const db = useFirestore();
   const [userList, setUserList] = useState<User[]>([]);
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!db || isUserLoading || !currentUser) return;
-    if(currentUser.role !== 'admin') {
+    if (!db || !currentUser || currentUser.role !== 'admin') {
+      setIsLoading(false);
       setUserList([]);
       return;
     }
@@ -94,6 +94,7 @@ export default function ManageUsersPage() {
         users.push({ id: doc.id, ...doc.data() } as User);
       });
       setUserList(users);
+      setIsLoading(false);
     },
     (serverError) => {
         const permissionError = new FirestorePermissionError({
@@ -101,9 +102,10 @@ export default function ManageUsersPage() {
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
+        setIsLoading(false);
     });
     return () => unsubscribe();
-  }, [db, currentUser, isUserLoading]);
+  }, [db, currentUser]);
 
   const form = useForm<z.infer<typeof newUserSchema>>({
     resolver: zodResolver(newUserSchema),
@@ -219,7 +221,7 @@ export default function ManageUsersPage() {
     <div>
       <PageHeader
         title="Manage Users"
-        subtitle={`There are ${userList.length} users in your team.`}
+        subtitle={!isLoading ? `There are ${userList.length} users in your team.` : ` `}
       >
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
@@ -315,9 +317,14 @@ export default function ManageUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isUserLoading ? (
+              {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-10">Loading users...</TableCell>
+                  <TableCell colSpan={4} className="text-center py-10">
+                    <div className='flex items-center justify-center gap-2'>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Loading users...</span>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ) : userList.map((user) => (
                 <TableRow key={user.id}>
@@ -337,6 +344,7 @@ export default function ManageUsersPage() {
                     <Select
                       value={user.role}
                       onValueChange={(newRole: User['role']) => handleRoleChange(user.id, newRole)}
+                      disabled={currentUser?.uid === user.id}
                     >
                       <SelectTrigger className="w-[120px]">
                         <SelectValue placeholder="Select a role" />

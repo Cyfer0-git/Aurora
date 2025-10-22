@@ -15,9 +15,10 @@ export default function DashboardLayout({
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  // While loading, or if there's no user yet (after loading is finished),
-  // show a full-screen loader. This prevents a flash of the dashboard or login page.
-  // The AuthProvider is responsible for redirection logic.
+  // The loading state now correctly waits for both authentication and user data fetching.
+  // If we are loading, or if loading is done and there is still no user,
+  // we show the loader. The AuthProvider is responsible for the redirect logic
+  // if the user is truly not authenticated.
   if (loading || !user) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -26,7 +27,8 @@ export default function DashboardLayout({
     );
   }
 
-  // If we have a user, render the main dashboard layout.
+  // Only if loading is complete AND we have a user object (with the role),
+  // do we render the main dashboard layout.
   return (
     <SidebarProvider>
       <div className="flex">

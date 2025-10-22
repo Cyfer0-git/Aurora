@@ -46,8 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDoc.exists()) {
           setUser({ id: firebaseUser.uid, ...userDoc.data() } as User);
         } else {
+          // If the user exists in Auth but not Firestore, they are partially created.
+          // We will attempt to create their Firestore record during signup.
+          // For now, treat them as logged out.
           setUser(null);
-          await signOut(auth);
         }
       } else {
         setUser(null);
@@ -95,34 +97,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       const userDocRef = doc(db, 'users', firebaseUser.uid);
+      
+      await setDoc(userDocRef, newUser);
 
-      // Use the new error handling pattern
-      setDoc(userDocRef, newUser)
-        .then(() => {
-          toast({
-            title: 'Signup Successful',
-            description: `Welcome, ${name}! Redirecting to your dashboard.`,
-          });
-          router.push('/dashboard');
-        })
-        .catch(async (serverError) => {
-          // This block now specifically handles Firestore errors
-          const permissionError = new FirestorePermissionError({
-            path: userDocRef.path,
-            operation: 'create',
-            requestResourceData: newUser,
-          });
-
-          // Emit the detailed error for the listener to catch
-          errorEmitter.emit('permission-error', permissionError);
-        });
+      toast({
+        title: 'Signup Successful',
+        description: `Welcome, ${name}! Redirecting to your dashboard.`,
+      });
+      router.push('/dashboard');
 
     } catch (error: any) {
       // This block now primarily handles Authentication errors
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';
-      } else if (error.message){
+      } else if (error.code === 'auth/api-key-not-valid') {
+        errorMessage = 'The API key is invalid. Please contact support.'
+      }
+      else if (error.message){
         errorMessage = error.message;
       }
       toast({
@@ -130,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: 'Signup Failed',
         description: errorMessage,
       });
-      console.error("Authentication error:", error);
+      console.error("Authentication or Firestore error:", error);
     }
   };
 

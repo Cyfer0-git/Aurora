@@ -9,7 +9,7 @@ const firebaseConfig = {
   projectId: "gen-lang-client-0115875430",
   storageBucket: "gen-lang-client-0115875430.appspot.com",
   messagingSenderId: "1083442122687",
-  appId: "1:1083442122687:web:86f6d61a35791c2b53c729",
+  appId: "1:1083442122687:web:f5c3c3a0b4b4c7d8b5c9c7",
   measurementId: "G-F385EH8J6H"
 };
 

@@ -97,6 +97,7 @@ export function AuthForm({ mode }: AuthFormProps) {
     const { name, email, password } = values;
 
     try {
+      // Step 1: Check if this user was pre-invited (exists in DB without an ID)
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
@@ -110,11 +111,13 @@ export function AuthForm({ mode }: AuthFormProps) {
           }
       });
       
+      // Step 2: Create the user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
+      // Step 3: Create or Update the user document in Firestore
       if (existingUserDoc && existingUserDocId) {
-        // This is an invited user completing their signup.
+        // This is an invited user completing their signup. Update their document.
         const userDocRef = doc(db, 'users', existingUserDocId);
         const userDataToUpdate = {
             id: firebaseUser.uid, 
@@ -122,6 +125,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
         };
         
+        // Use .catch() for specific error handling, not a broad try/catch
         updateDoc(userDocRef, userDataToUpdate)
           .then(() => {
              toast({
@@ -129,7 +133,8 @@ export function AuthForm({ mode }: AuthFormProps) {
               description: `Welcome, ${name}! Your account is now active.`,
             });
           })
-          .catch(async (serverError) => {
+          .catch((serverError) => {
+            // This is the key change: create and emit the contextual error
             const permissionError = new FirestorePermissionError({
                 path: userDocRef.path,
                 operation: 'update',
@@ -139,16 +144,17 @@ export function AuthForm({ mode }: AuthFormProps) {
         });
 
       } else {
-        // This is a brand new user, not an invited one.
+        // This is a brand new user, not an invited one. Create their document.
         const newUser: User = {
           id: firebaseUser.uid,
           name,
           email,
           avatarUrl: `https://picsum.photos/seed/${firebaseUser.uid}/40/40`,
-          role: 'Support', // Default role for all new signups
+          role: 'Support', // Default role
         };
         const newUserDocRef = doc(db, 'users', firebaseUser.uid);
         
+        // Use .catch() for specific error handling
         setDoc(newUserDocRef, newUser)
           .then(() => {
             toast({
@@ -156,7 +162,8 @@ export function AuthForm({ mode }: AuthFormProps) {
               description: `Welcome, ${name}!`,
             });
           })
-          .catch(async (serverError) => {
+          .catch((serverError) => {
+             // This is the key change: create and emit the contextual error
              const permissionError = new FirestorePermissionError({
                 path: newUserDocRef.path,
                 operation: 'create',
@@ -166,20 +173,19 @@ export function AuthForm({ mode }: AuthFormProps) {
         });
       }
     } catch (error: any) {
+      // This will now only catch errors from createUserWithEmailAndPassword, not Firestore.
       let errorMessage = 'An unexpected error occurred during signup.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered. Please log in.';
-      } else if (error.name !== 'FirestorePermissionError') { // Don't show generic toast for our custom error
+      } else {
         errorMessage = error.message || errorMessage;
-         toast({
-          variant: 'destructive',
-          title: 'Signup Failed',
-          description: errorMessage,
-        });
       }
-       if (error.name !== 'FirestorePermissionError') {
-        console.error("Signup error:", error);
-      }
+      toast({
+        variant: 'destructive',
+        title: 'Signup Failed',
+        description: errorMessage,
+      });
+      console.error("Signup Auth Error:", error);
     } finally {
         setIsLoading(false);
     }

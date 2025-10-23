@@ -86,6 +86,7 @@ export default function ManageUsersPage() {
         return;
     }
 
+    setIsLoading(true);
     const q = collection(db, 'users');
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const users: User[] = [];

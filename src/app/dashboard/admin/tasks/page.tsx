@@ -90,6 +90,7 @@ export default function ManageTasksPage() {
       return;
     }
 
+    setIsLoading(true);
     let tasksDone = false;
     let usersDone = false;
 

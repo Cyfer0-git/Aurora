@@ -55,6 +55,7 @@ export default function ManageAnnouncementsPage() {
         return;
     }
     
+    setIsLoading(true);
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const announcements: Announcement[] = [];

@@ -25,6 +25,7 @@ export default function ViewReportsPage() {
       return;
     }
 
+    setIsLoading(true);
     let reportsData: Report[] = [];
     let usersData: User[] = [];
     let reportsDone = false;
